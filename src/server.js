@@ -1,10 +1,10 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
 
 const socketIo = require('socket.io');
 
 const cors = require('cors');
-const { CLIENT_RENEG_WINDOW } = require('tls');
 
 const app = express();
 
@@ -18,7 +18,7 @@ const io = socketIo(server,{
 });
 
 app.use(cors());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 let drawingHistory = [];
 
