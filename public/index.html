@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<link rel="stylesheet" href="style.css" />
+		<title>Real time whiteboard</title>
+	</head>
+	<body>
+		<div class="header">
+			<h1>Real Time Whiteboard</h1>
+			<p>Draw on one device ,see it it on all devices</p>
+		</div>
+		<div class="tools">
+			<button onclick="setColor('black')">Black</button>
+			<button onclick="setColor('red')">Red</button>
+			<button onclick="setColor('blue')">Blue</button>
+			<button onclick="setColor('green')">Green</button>
+			<button onclick="setLineWidth(2)">Thin</button>
+			<button onclick="setLineWidth(5)">Medium</button>
+			<button onclick="setLineWidth(10)">Thick</button>
+			<button onclick="clearBoard()">Clear All</button>
+			<button onclick="toggleEraser()">Eraser</button>
+		</div>
+
+		<div id="status" class="connection-status">
+			connecting to server ...
+		</div>
+		<canvas id="whiteboard"></canvas>
+		<script src="/socket.io/socket.io.js"></script>
+		<script src="script.js"></script>
+	</body>
+</html>
