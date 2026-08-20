@@ -4,29 +4,150 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<link rel="stylesheet" href="style.css" />
-		<title>Real time whiteboard</title>
+		<title>Canvas room | Real-time whiteboard</title>
 	</head>
 	<body>
-		<div class="header">
-			<h1>Real Time Whiteboard</h1>
-			<p>Draw on one device ,see it it on all devices</p>
-		</div>
-		<div class="tools">
-			<button onclick="setColor('black')">Black</button>
-			<button onclick="setColor('red')">Red</button>
-			<button onclick="setColor('blue')">Blue</button>
-			<button onclick="setColor('green')">Green</button>
-			<button onclick="setLineWidth(2)">Thin</button>
-			<button onclick="setLineWidth(5)">Medium</button>
-			<button onclick="setLineWidth(10)">Thick</button>
-			<button onclick="clearBoard()">Clear All</button>
-			<button onclick="toggleEraser()">Eraser</button>
-		</div>
+		<header class="app-header">
+			<div class="brand-lockup">
+				<div class="brand-mark" aria-hidden="true">
+					<span></span><span></span><span></span>
+				</div>
+				<div>
+					<p class="brand-name">Canvas room</p>
+					<p class="brand-caption">
+						Make the idea visible · A shared space for rough ideas
+					</p>
+				</div>
+			</div>
+			<div class="header-actions">
+				<div
+					id="status"
+					class="connection-status"
+					role="status"
+					aria-live="polite"
+				>
+					<span class="status-dot" aria-hidden="true"></span>
+					<span class="status-label">Connecting</span>
+				</div>
+				<a class="auth-link" href="/auth"
+					>Account <span aria-hidden="true">↗</span></a
+				>
+			</div>
+		</header>
 
-		<div id="status" class="connection-status">
-			connecting to server ...
-		</div>
-		<canvas id="whiteboard"></canvas>
+		<main class="workspace">
+			<section class="board-shell" aria-label="Shared drawing board">
+				<div class="board-toolbar">
+					<div class="tool-group color-group">
+						<span class="tool-label">Ink</span>
+						<div
+							class="swatches"
+							role="group"
+							aria-label="Ink color"
+						>
+							<button
+								class="swatch swatch-black is-active"
+								type="button"
+								data-color="black"
+								aria-label="Black ink"
+								title="Black"
+								onclick="setColor('black')"
+							></button>
+							<button
+								class="swatch swatch-red"
+								type="button"
+								data-color="red"
+								aria-label="Red ink"
+								title="Red"
+								onclick="setColor('red')"
+							></button>
+							<button
+								class="swatch swatch-blue"
+								type="button"
+								data-color="blue"
+								aria-label="Blue ink"
+								title="Blue"
+								onclick="setColor('blue')"
+							></button>
+							<button
+								class="swatch swatch-green"
+								type="button"
+								data-color="green"
+								aria-label="Green ink"
+								title="Green"
+								onclick="setColor('green')"
+							></button>
+						</div>
+					</div>
+
+					<div class="tool-group">
+						<span class="tool-label">Weight</span>
+						<div
+							class="segmented-control"
+							role="group"
+							aria-label="Line weight"
+						>
+							<button
+								type="button"
+								data-width="2"
+								onclick="setLineWidth(2)"
+								title="Thin line"
+							>
+								Thin
+							</button>
+							<button
+								class="is-active"
+								type="button"
+								data-width="5"
+								onclick="setLineWidth(5)"
+								title="Medium line"
+							>
+								Medium
+							</button>
+							<button
+								type="button"
+								data-width="10"
+								onclick="setLineWidth(10)"
+								title="Thick line"
+							>
+								Thick
+							</button>
+						</div>
+					</div>
+
+					<div class="toolbar-divider" aria-hidden="true"></div>
+					<button
+						class="tool-action"
+						type="button"
+						onclick="toggleEraser()"
+						title="Toggle eraser"
+					>
+						<span aria-hidden="true">⌫</span> Eraser
+					</button>
+					<button
+						class="tool-action tool-action-danger"
+						type="button"
+						onclick="clearBoard()"
+						title="Clear the board"
+					>
+						<span aria-hidden="true">⌧</span> Clear
+					</button>
+				</div>
+				<div class="canvas-wrap">
+					<div class="canvas-meta">
+						<span>BOARD OPEN</span><span>DRAWING SYNCED LIVE</span>
+					</div>
+					<canvas
+						id="whiteboard"
+						aria-label="Collaborative whiteboard canvas"
+					></canvas>
+				</div>
+			</section>
+			<p class="workspace-footer">
+				<span aria-hidden="true">●</span> Invite someone by sharing this
+				page URL
+			</p>
+		</main>
 		<script src="/socket.io/socket.io.js"></script>
 		<script src="script.js"></script>
 	</body>

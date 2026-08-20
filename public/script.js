@@ -1,7 +1,28 @@
+async function restoreAuthSession() {
+    try {
+        const response = await fetch('/api/auth/refresh', {
+            method: 'POST',
+            credentials: 'include'
+        });
+        if (!response.ok) {
+            return;
+        }
+
+        const result = await response.json();
+        localStorage.setItem('whiteboardAccessToken', result.accessToken);
+        localStorage.setItem('whiteboardUser', JSON.stringify(result.user));
+    } catch (error) {
+        console.error('Unable to restore auth session:', error);
+    }
+}
+
+restoreAuthSession();
+
 const socket = io();
 const canvas = document.getElementById('whiteboard');
 const context = canvas.getContext('2d');
 const status = document.getElementById('status');
+const statusLabel = status.querySelector('.status-label');
 
 let color = 'black';
 let lineWidth = 5;
@@ -49,10 +70,16 @@ function getPoint(event) {
 function setColor(selectedColor) {
     color = selectedColor;
     erasing = false;
+    document.querySelectorAll('.swatch').forEach((swatch) => {
+        swatch.classList.toggle('is-active', swatch.dataset.color === selectedColor);
+    });
 }
 
 function setLineWidth(selectedWidth) {
     lineWidth = selectedWidth;
+    document.querySelectorAll('[data-width]').forEach((button) => {
+        button.classList.toggle('is-active', Number(button.dataset.width) === selectedWidth);
+    });
 }
 
 function toggleEraser() {
@@ -100,12 +127,12 @@ canvas.addEventListener('pointercancel', stopDrawing);
 canvas.addEventListener('pointerleave', stopDrawing);
 
 socket.on('connect', () => {
-    status.textContent = 'Connected ! share this url with other devices';
+    statusLabel.textContent = 'Connected';
     status.classList.add('connected');
 });
 
 socket.on('disconnect', () => {
-    status.textContent = 'Disconnected from server';
+    statusLabel.textContent = 'Disconnected';
     status.classList.remove('connected');
 });
 

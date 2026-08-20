@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<link rel="stylesheet" href="auth.css" />
+		<title>Whiteboard access</title>
+	</head>
+	<body>
+		<main class="auth-shell">
+			<section class="auth-intro">
+				<p class="eyebrow">REAL-TIME WHITEBOARD</p>
+				<h1>Make space for ideas.</h1>
+				<p>
+					Sign in to keep your collaborative canvas close, or create
+					an account to get started.
+				</p>
+				<a class="back-link" href="/"
+					>Open the whiteboard
+					<span aria-hidden="true">&rarr;</span></a
+				>
+			</section>
+
+			<section class="auth-panel" aria-labelledby="form-title">
+				<div
+					class="auth-tabs"
+					role="tablist"
+					aria-label="Authentication options"
+				>
+					<button
+						class="tab is-active"
+						type="button"
+						role="tab"
+						aria-selected="true"
+						data-mode="login"
+					>
+						Log in
+					</button>
+					<button
+						class="tab"
+						type="button"
+						role="tab"
+						aria-selected="false"
+						data-mode="register"
+					>
+						Create account
+					</button>
+				</div>
+
+				<div class="form-heading">
+					<p class="eyebrow">WELCOME BACK</p>
+					<h2 id="form-title">Log in to your board</h2>
+					<p id="form-description">
+						Use your account details to continue.
+					</p>
+				</div>
+
+				<form id="auth-form" novalidate>
+					<label class="name-field is-hidden" for="name">Name</label>
+					<input
+						class="name-field is-hidden"
+						id="name"
+						name="name"
+						type="text"
+						autocomplete="name"
+						placeholder="Your name"
+					/>
+
+					<label for="email">Email</label>
+					<input
+						id="email"
+						name="email"
+						type="email"
+						autocomplete="email"
+						placeholder="you@example.com"
+						required
+					/>
+
+					<label for="password">Password</label>
+					<input
+						id="password"
+						name="password"
+						type="password"
+						autocomplete="current-password"
+						placeholder="At least 8 characters"
+						required
+					/>
+
+					<p
+						id="form-message"
+						class="form-message"
+						role="status"
+						aria-live="polite"
+					></p>
+					<button
+						class="submit-button"
+						type="submit"
+						id="submit-button"
+					>
+						Log in <span aria-hidden="true">&rarr;</span>
+					</button>
+				</form>
+			</section>
+		</main>
+		<script src="auth.js"></script>
+	</body>
+</html>
