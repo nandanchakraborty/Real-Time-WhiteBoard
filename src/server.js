@@ -5,6 +5,8 @@ const path = require('path');
 const socketIo = require('socket.io');
 
 const cors = require('cors');
+const { getPrismaClient } = require('./config/database');
+const authRoutes = require('./routes/authRoutes/authroutes');
 
 const app = express();
 
@@ -18,6 +20,17 @@ const io = socketIo(server,{
 });
 
 app.use(cors());
+app.use(express.json());
+app.use('/api/auth', authRoutes);
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'auth.html'));
+});
+app.get('/auth', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'auth.html'));
+});
+app.get('/whiteboard', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 let drawingHistory = [];
@@ -45,8 +58,22 @@ io.on('connection',(socket)=>{
 
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT,'0.0.0.0',()=>{
-    console.log(`Server is running on port ${PORT}`);
+async function startServer() {
+    if (process.env.DATABASE_URL) {
+        const prisma = getPrismaClient();
+        await prisma.$connect();
+        console.log('Connected to PostgreSQL');
+    } else {
+        console.log('DATABASE_URL is not configured; starting without PostgreSQL');
+    }
 
-    console.log(`access form mobile :http://YOUR PC IP:${PORT}`);
-})
+    server.listen(PORT,'0.0.0.0',()=>{
+        console.log(`Server is running on port ${PORT}`);
+        console.log(`access form mobile :http://YOUR PC IP:${PORT}`);
+    });
+}
+
+startServer().catch((error) => {
+    console.error('Unable to connect to PostgreSQL:', error.message);
+    process.exit(1);
+});
