@@ -104,7 +104,7 @@ async function refresh(req, res) {
 
 async function logout(req, res) {
 	clearRefreshCookie(res);
-	return res.status(204).send();
+	return res.redirect('/login');
 }
 
 async function currentUser(req, res) {

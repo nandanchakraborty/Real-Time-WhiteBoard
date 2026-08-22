@@ -26,9 +26,13 @@ const statusLabel = status.querySelector('.status-label');
 
 let color = 'black';
 let lineWidth = 5;
+const eraserWidth = 20;
 let erasing = false;
 let drawing = false;
 let drawingHistory = [];
+let redoHistory = [];
+const undoButton = document.querySelector('[onclick="undo()"]');
+const redoButton = document.querySelector('[onclick="redo()"]');
 
 function resizeCanvas() {
     const ratio = window.devicePixelRatio || 1;
@@ -90,6 +94,19 @@ function clearBoard() {
     socket.emit('clear');
 }
 
+function undo() {
+    socket.emit('undo');
+}
+
+function redo() {
+    socket.emit('redo');
+}
+
+function updateHistoryControls() {
+    undoButton.disabled = drawingHistory.length === 0;
+    redoButton.disabled = redoHistory.length === 0;
+}
+
 canvas.addEventListener('pointerdown', (event) => {
     drawing = true;
     canvas.setPointerCapture(event.pointerId);
@@ -108,7 +125,7 @@ canvas.addEventListener('pointermove', (event) => {
         endX: point.x,
         endY: point.y,
         color: erasing ? 'white' : color,
-        lineWidth
+        lineWidth: erasing ? eraserWidth : lineWidth
     };
 
     drawingHistory.push(line);
@@ -139,16 +156,25 @@ socket.on('disconnect', () => {
 socket.on('drawing-history', (history) => {
     drawingHistory = history;
     redrawHistory();
+    updateHistoryControls();
+});
+
+socket.on('history-controls', ({ redoCount }) => {
+    redoHistory.length = redoCount;
+    updateHistoryControls();
 });
 
 socket.on('draw', (line) => {
     drawingHistory.push(line);
     drawLine(line);
+    updateHistoryControls();
 });
 
 socket.on('clear', () => {
     drawingHistory = [];
+    redoHistory = [];
     redrawHistory();
+    updateHistoryControls();
 });
 
 window.addEventListener('resize', resizeCanvas);

@@ -318,6 +318,22 @@ h1 {
 	color: var(--coral-dark);
 }
 
+.tool-action:disabled {
+	color: #b9c0b8;
+	cursor: not-allowed;
+	opacity: 0.7;
+}
+
+.tool-action:disabled:hover {
+	color: #b9c0b8;
+}
+
+.history-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
 .tool-action-danger {
 	color: var(--coral-dark);
 }

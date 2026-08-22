@@ -34,27 +34,61 @@ app.get('/whiteboard', (req, res) => {
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 let drawingHistory = [];
+let redoHistory = [];
+
+function broadcastHistory() {
+    io.emit('drawing-history', drawingHistory);
+    io.emit('history-controls', { redoCount: redoHistory.length });
+}
 
 io.on('connection',(socket)=>{
     console.log('New client connected');
 
-    socket.emit('drawing-history',drawingHistory);
+    socket.emit('drawing-history', drawingHistory);
+    socket.emit('history-controls', { redoCount: redoHistory.length });
 
 
     socket.on('draw',(data)=>{
         drawingHistory.push(data);
+        redoHistory = [];
         socket.broadcast.emit('draw',data);
+        io.emit('history-controls', { redoCount: 0 });
+    });
+
+    socket.on('undo', () => {
+        if (drawingHistory.length === 0) {
+            return;
+        }
+
+        redoHistory.push(drawingHistory.pop());
+        broadcastHistory();
+    });
+
+    socket.on('redo', () => {
+        if (redoHistory.length === 0) {
+            return;
+        }
+
+        drawingHistory.push(redoHistory.pop());
+        broadcastHistory();
     });
 
     socket.on('clear',()=>{
         drawingHistory = [];
-        io.emit('clear')
+        redoHistory = [];
+        io.emit('clear');
+        io.emit('history-controls', { redoCount: 0 });
     })
 
     socket.on('disconnet',()=>{
         console.log('A client disconnected')
     });
 });
+
+// socket.emit()           // send to server
+// socket.on()             // listen
+// io.emit()               // send to all
+// socket.broadcast.emit() // send to everyone except sender
 
 const PORT = process.env.PORT || 3000;
 

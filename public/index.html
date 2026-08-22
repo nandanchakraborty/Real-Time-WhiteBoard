@@ -132,6 +132,30 @@
 					>
 						<span aria-hidden="true">⌧</span> Clear
 					</button>
+					<div
+						class="history-actions"
+						role="group"
+						aria-label="Drawing history"
+					>
+						<button
+							class="tool-action"
+							type="button"
+							onclick="undo()"
+							title="Undo latest line segment"
+							aria-label="Undo latest line segment"
+						>
+							<span aria-hidden="true">↶</span> Undo
+						</button>
+						<button
+							class="tool-action"
+							type="button"
+							onclick="redo()"
+							title="Redo latest undone line segment"
+							aria-label="Redo latest undone line segment"
+						>
+							<span aria-hidden="true">↷</span> Redo
+						</button>
+					</div>
 				</div>
 				<div class="canvas-wrap">
 					<div class="canvas-meta">
