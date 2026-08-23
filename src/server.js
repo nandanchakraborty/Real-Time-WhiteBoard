@@ -7,6 +7,10 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const { getPrismaClient } = require('./config/database');
 const authRoutes = require('./routes/authRoutes/authroutes');
+const boardRoutes = require('./routes/boardRoutes');
+const { findOwnedBoard, findBoardByShareToken, updateBoard } = require('./services/boardService/boardservice');
+const { updateBoardContent } = require('./services/boardService/boardservice');
+const { verifyToken } = require('./utils/jwt');
 
 const app = express();
 
@@ -22,63 +26,111 @@ const io = socketIo(server,{
 app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRoutes);
+app.use('/api/boards', boardRoutes);
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'auth.html'));
 });
 app.get('/auth', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'auth.html'));
 });
-app.get('/whiteboard', (req, res) => {
+app.get(['/whiteboard', '/whiteboard/:boardId'], (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-let drawingHistory = [];
-let redoHistory = [];
-
-function broadcastHistory() {
-    io.emit('drawing-history', drawingHistory);
-    io.emit('history-controls', { redoCount: redoHistory.length });
-}
+const boardStates = new Map();
 
 io.on('connection',(socket)=>{
     console.log('New client connected');
+    let boardState = null;
 
-    socket.emit('drawing-history', drawingHistory);
-    socket.emit('history-controls', { redoCount: redoHistory.length });
+    function emitState() {
+        if (!boardState) return;
+        socket.emit('drawing-history', boardState.lines);
+        socket.emit('history-controls', { redoCount: boardState.redo.length });
+        socket.emit('page-count', boardState.pageCount);
+    }
 
+    async function saveState() {
+        await updateBoardContent(boardState.id, { lines: boardState.lines }, boardState.pageCount);
+    }
 
-    socket.on('draw',(data)=>{
-        drawingHistory.push(data);
-        redoHistory = [];
-        socket.broadcast.emit('draw',data);
-        io.emit('history-controls', { redoCount: 0 });
-    });
-
-    socket.on('undo', () => {
-        if (drawingHistory.length === 0) {
-            return;
+    socket.on('join-board', async ({ boardId, accessToken, shareToken }) => {
+        try {
+            let board;
+            let permission = 'view';
+            if (shareToken) {
+                board = await findBoardByShareToken(shareToken);
+                permission = board && board.editToken === shareToken ? 'edit' : 'view';
+            } else {
+                const payload = verifyToken(accessToken);
+                board = await findOwnedBoard(boardId, payload.userId);
+                permission = 'edit';
+            }
+            if (!board || board.id !== boardId) throw new Error('Board access denied');
+                boardState = boardStates.get(board.id);
+                if (!boardState) {
+                    boardState = {
+                        id: board.id,
+                        lines: Array.isArray(board.content?.lines) ? board.content.lines : [],
+                        pageCount: board.pageCount,
+                        redo: []
+                    };
+                    boardStates.set(board.id, boardState);
+                }
+            socket.join(board.id);
+            socket.data.permission = permission;
+            socket.emit('board-ready', { permission, title: board.title });
+            emitState();
+        } catch (error) {
+            socket.emit('board-error', { error: 'Unable to open this board' });
         }
-
-        redoHistory.push(drawingHistory.pop());
-        broadcastHistory();
     });
 
-    socket.on('redo', () => {
-        if (redoHistory.length === 0) {
-            return;
-        }
-
-        drawingHistory.push(redoHistory.pop());
-        broadcastHistory();
+    socket.on('draw', async (data) => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        boardState.lines.push(data);
+        boardState.redo = [];
+        await saveState();
+        socket.to(boardState.id).emit('draw', data);
+        io.to(boardState.id).emit('history-controls', { redoCount: 0 });
     });
 
-    socket.on('clear',()=>{
-        drawingHistory = [];
-        redoHistory = [];
-        io.emit('clear');
-        io.emit('history-controls', { redoCount: 0 });
-    })
+    socket.on('undo', async () => {
+        if (!boardState || socket.data.permission !== 'edit' || boardState.lines.length === 0) return;
+        boardState.redo.push({ type: 'line', line: boardState.lines.pop() });
+        await saveState();
+        io.to(boardState.id).emit('drawing-history', boardState.lines);
+        io.to(boardState.id).emit('history-controls', { redoCount: boardState.redo.length });
+    });
+
+    socket.on('redo', async () => {
+        if (!boardState || socket.data.permission !== 'edit' || boardState.redo.length === 0) return;
+        const action = boardState.redo.pop();
+        if (action.type === 'page-clear') boardState.lines.push(...action.lines);
+        else boardState.lines.push(action.line || action);
+        await saveState();
+        io.to(boardState.id).emit('drawing-history', boardState.lines);
+        io.to(boardState.id).emit('history-controls', { redoCount: boardState.redo.length });
+    });
+
+    socket.on('clear-page', async () => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        const lines = boardState.lines.filter((line) => (line.pageId || 1) === boardState.pageCount);
+        if (lines.length === 0) return;
+        boardState.lines = boardState.lines.filter((line) => (line.pageId || 1) !== boardState.pageCount);
+        boardState.redo = [{ type: 'page-clear', lines }];
+        await saveState();
+        io.to(boardState.id).emit('drawing-history', boardState.lines);
+        io.to(boardState.id).emit('history-controls', { redoCount: 1 });
+    });
+
+    socket.on('add-page', async () => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        boardState.pageCount += 1;
+        await saveState();
+        io.to(boardState.id).emit('page-count', boardState.pageCount);
+    });
 
     socket.on('disconnet',()=>{
         console.log('A client disconnected')

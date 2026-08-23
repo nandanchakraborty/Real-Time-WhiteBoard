@@ -8,6 +8,15 @@
 	</head>
 	<body>
 		<header class="app-header">
+			<button
+				class="sidebar-toggle"
+				id="sidebar-toggle"
+				type="button"
+				aria-label="Toggle board navigation"
+				title="Toggle board navigation"
+			>
+				☰
+			</button>
 			<div class="brand-lockup">
 				<div class="brand-mark" aria-hidden="true">
 					<span></span><span></span><span></span>
@@ -34,6 +43,57 @@
 				>
 			</div>
 		</header>
+		<aside
+			class="board-sidebar"
+			id="board-sidebar"
+			aria-label="Board navigation"
+		>
+			<div class="sidebar-heading">
+				<span class="tool-label">Your boards</span>
+				<button
+					class="sidebar-collapse"
+					id="sidebar-collapse"
+					type="button"
+					aria-label="Collapse board navigation"
+					title="Collapse board navigation"
+				>
+					‹
+				</button>
+			</div>
+			<input
+				class="board-title-input"
+				id="board-title"
+				type="text"
+				aria-label="Board title"
+				maxlength="80"
+			/>
+			<button
+				class="new-board-button"
+				id="new-board-button"
+				type="button"
+			>
+				<span aria-hidden="true">＋</span> Create new board
+			</button>
+			<nav
+				class="recent-boards"
+				id="recent-boards"
+				aria-label="Recent boards"
+			></nav>
+			<div class="sidebar-actions">
+				<button class="sidebar-action" id="rename-board" type="button">
+					Rename board
+				</button>
+				<button class="sidebar-action" id="share-edit" type="button">
+					Copy edit link
+				</button>
+				<button class="sidebar-action" id="share-view" type="button">
+					Copy view link
+				</button>
+				<button class="sidebar-action" id="export-pdf" type="button">
+					Export all pages as PDF
+				</button>
+			</div>
+		</aside>
 
 		<main class="workspace">
 			<section class="board-shell" aria-label="Shared drawing board">
@@ -132,6 +192,14 @@
 					>
 						<span aria-hidden="true">⌧</span> Clear
 					</button>
+					<button
+						class="tool-action"
+						type="button"
+						onclick="addPage()"
+						title="Add a new page below"
+					>
+						<span aria-hidden="true">＋</span> New page
+					</button>
 					<div
 						class="history-actions"
 						role="group"
@@ -157,14 +225,15 @@
 						</button>
 					</div>
 				</div>
-				<div class="canvas-wrap">
+				<div class="canvas-wrap" id="canvas-wrap">
 					<div class="canvas-meta">
 						<span>BOARD OPEN</span><span>DRAWING SYNCED LIVE</span>
 					</div>
-					<canvas
-						id="whiteboard"
-						aria-label="Collaborative whiteboard canvas"
-					></canvas>
+					<div
+						class="pages"
+						id="pages"
+						aria-label="Whiteboard pages"
+					></div>
 				</div>
 			</section>
 			<p class="workspace-footer">
@@ -173,6 +242,7 @@
 			</p>
 		</main>
 		<script src="/socket.io/socket.io.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
 		<script src="script.js"></script>
 	</body>
 </html>

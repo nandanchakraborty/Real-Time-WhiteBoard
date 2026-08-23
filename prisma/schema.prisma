@@ -13,6 +13,23 @@ model User {
   email     String   @unique
   pass      String
   createdAt DateTime @default(now()) @map("created_at")
+  boards    Board[]
 
   @@map("users")
+}
+
+model Board {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  title     String   @default("Untitled board")
+  content   Json
+  pageCount Int      @default(1) @map("page_count")
+  editToken String   @unique @map("edit_token")
+  viewToken String   @unique @map("view_token")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@map("boards")
 }
