@@ -14,19 +14,29 @@ const { verifyToken } = require('./utils/jwt');
 
 const app = express();
 
+const allowedOrigins = process.env.CLIENT_ORIGIN
+    ? process.env.CLIENT_ORIGIN.split(',').map((origin) => origin.trim())
+    : true;
+
 const server = http.createServer(app);
 
 const io = socketIo(server,{
     cors:{
-        origin: "+",
-        method:["GET","POST"]
+        origin: allowedOrigins,
+        methods: ['GET', 'POST'],
+        credentials: true
     }
 });
 
-app.use(cors());
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/boards', boardRoutes);
+
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok' });
+});
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'auth.html'));
 });
@@ -132,7 +142,7 @@ io.on('connection',(socket)=>{
         io.to(boardState.id).emit('page-count', boardState.pageCount);
     });
 
-    socket.on('disconnet',()=>{
+    socket.on('disconnect',()=>{
         console.log('A client disconnected')
     });
 });

@@ -1,6 +1,8 @@
 # Real-Time Whiteboard
 
-Collaborative drawing board built with Express, Socket.IO, HTML, CSS, and JavaScript.
+Collaborative drawing board with an Express/REST API, Socket.IO realtime transport, and a browser client.
+
+The browser client can be hosted separately from the API by defining `window.WHITEBOARD_API_URL` before loading `auth.js` or `script.js`. The API exposes authentication and board resources under `/api`, while Socket.IO handles live drawing events.
 
 ## Structure
 
@@ -18,6 +20,16 @@ npm start
 ```
 
 Open `http://localhost:3000` in a browser.
+
+## API client configuration
+
+Set `CLIENT_ORIGIN` to the comma-separated origin(s) of a separately hosted client:
+
+```bash
+CLIENT_ORIGIN=http://localhost:5173 npm start
+```
+
+Useful endpoints include `GET /api/health`, `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, and the board endpoints under `/api/boards`. Send access tokens as `Authorization: Bearer <token>`. Refresh tokens may be sent in the `refreshToken` JSON field or through the HTTP-only cookie.
 
 ## PostgreSQL
 

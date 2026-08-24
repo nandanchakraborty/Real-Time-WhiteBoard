@@ -54,12 +54,20 @@ async function findBoardByShareToken(token) {
 
 async function updateBoard(id, userId, data) {
 	const prisma = getPrismaClient();
-	return prisma.board.update({ where: { id, userId }, data });
+	const board = await prisma.board.findFirst({ where: { id, userId } });
+	if (!board) return null;
+	return prisma.board.update({ where: { id }, data });
 }
 
 async function updateBoardContent(id, content, pageCount) {
 	const prisma = getPrismaClient();
 	return prisma.board.update({ where: { id }, data: { content, pageCount } });
+}
+
+async function deleteOwnedBoard(id, userId) {
+	const prisma = getPrismaClient();
+	const result = await prisma.board.deleteMany({ where: { id, userId } });
+	return result.count > 0;
 }
 
 module.exports = {
@@ -69,5 +77,6 @@ module.exports = {
 	findOwnedBoard,
 	findBoardByShareToken,
 	updateBoard,
-	updateBoardContent
+	updateBoardContent,
+	deleteOwnedBoard
 };

@@ -126,6 +126,33 @@ body {
 	text-decoration: none;
 }
 
+.recent-board-row {
+	display: flex;
+	align-items: stretch;
+	gap: 4px;
+}
+
+.recent-board-row .recent-board {
+	min-width: 0;
+	flex: 1;
+}
+
+.delete-board {
+	width: 30px;
+	padding: 0;
+	border: 1px solid transparent;
+	color: var(--muted);
+	background: transparent;
+	font-size: 1.1rem;
+	line-height: 1;
+}
+
+.delete-board:hover {
+	border-color: var(--coral);
+	color: var(--coral-dark);
+	background: transparent;
+}
+
 .recent-board:hover,
 .recent-board.is-active {
 	border-left-color: var(--coral);

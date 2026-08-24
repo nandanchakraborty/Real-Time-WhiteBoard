@@ -7,6 +7,11 @@ const formMessage = document.getElementById('form-message');
 const submitButton = document.getElementById('submit-button');
 
 let mode = 'login';
+const API_BASE_URL = (window.WHITEBOARD_API_URL || '').replace(/\/$/, '');
+
+function apiUrl(path) {
+	return `${API_BASE_URL}${path}`;
+}
 
 function setMode(nextMode) {
 	mode = nextMode;
@@ -43,9 +48,10 @@ form.addEventListener('submit', async (event) => {
 	const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
 
 	try {
-		const response = await fetch(endpoint, {
+		const response = await fetch(apiUrl(endpoint), {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
+			credentials: 'include',
 			body: JSON.stringify(body)
 		});
 		const result = await response.json();

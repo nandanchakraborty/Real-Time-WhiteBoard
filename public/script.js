@@ -1,6 +1,12 @@
+const API_BASE_URL = (window.WHITEBOARD_API_URL || '').replace(/\/$/, '');
+
+function apiUrl(path) {
+    return `${API_BASE_URL}${path}`;
+}
+
 async function restoreAuthSession() {
     try {
-        const response = await fetch('/api/auth/refresh', {
+        const response = await fetch(apiUrl('/api/auth/refresh'), {
             method: 'POST',
             credentials: 'include'
         });
@@ -16,9 +22,14 @@ async function restoreAuthSession() {
     }
 }
 
-restoreAuthSession();
-
-const socket = io({ autoConnect: false });
+const socket = typeof io === 'function'
+    ? io(window.WHITEBOARD_API_URL || undefined, { autoConnect: false })
+    : {
+        connected: false,
+        connect() {},
+        emit() {},
+        on() {}
+    };
 const pagesElement = document.getElementById('pages');
 const status = document.getElementById('status');
 const statusLabel = status.querySelector('.status-label');
@@ -52,18 +63,41 @@ function formatBoardDate(value) {
 
 async function loadRecentBoards() {
     if (shareToken) return;
-    const response = await fetch('/api/boards', { headers: authHeaders() });
+    const response = await fetch(apiUrl('/api/boards'), { headers: authHeaders() });
     if (!response.ok) return;
     const result = await response.json();
-    recentBoardsElement.innerHTML = result.boards.map((board) => `
-        <a class="recent-board ${board.id === boardId ? 'is-active' : ''}" href="/whiteboard/${board.id}">
-            ${board.title}<small>${formatBoardDate(board.updatedAt)} · ${board.pageCount} page${board.pageCount === 1 ? '' : 's'}</small>
-        </a>
-    `).join('');
+    recentBoardsElement.innerHTML = result.boards.map((board) => {
+        const isActive = board.id === boardId;
+        return `
+            <div class="recent-board-row">
+                <a class="recent-board ${isActive ? 'is-active' : ''}" href="/whiteboard/${board.id}">
+                    <span>${board.title}</span><small>${formatBoardDate(board.updatedAt)} · ${board.pageCount} page${board.pageCount === 1 ? '' : 's'}</small>
+                </a>
+                ${isActive ? '' : `<button class="delete-board" type="button" data-board-id="${board.id}" aria-label="Delete ${board.title}" title="Delete board">&times;</button>`}
+            </div>
+        `;
+    }).join('');
+    recentBoardsElement.querySelectorAll('.delete-board').forEach((button) => {
+        button.addEventListener('click', () => deleteSavedBoard(button.dataset.boardId, button));
+    });
+}
+
+async function deleteSavedBoard(savedBoardId, button) {
+    if (savedBoardId === boardId || !window.confirm('Delete this saved board? This cannot be undone.')) return;
+    button.disabled = true;
+    const response = await fetch(apiUrl(`/api/boards/${savedBoardId}`), {
+        method: 'DELETE',
+        headers: authHeaders()
+    });
+    if (!response.ok) {
+        button.disabled = false;
+        return;
+    }
+    loadRecentBoards();
 }
 
 async function createNewBoard() {
-    const response = await fetch('/api/boards', {
+    const response = await fetch(apiUrl('/api/boards'), {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: 'Untitled board' })
@@ -74,17 +108,24 @@ async function createNewBoard() {
 async function renameCurrentBoard() {
     const title = boardTitleInput.value.trim();
     if (!title || !boardId || shareToken) return;
-    await fetch(`/api/boards/${boardId}/title`, {
+    const response = await fetch(apiUrl(`/api/boards/${boardId}/title`), {
         method: 'PATCH',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ title })
     });
-    loadRecentBoards();
+    if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        window.alert(result.error || 'Unable to save board name');
+        return;
+    }
+    const result = await response.json();
+    boardTitleInput.value = result.board.title;
+    await loadRecentBoards();
 }
 
 async function copyShareLink(kind) {
     if (!boardId || shareToken || permission !== 'edit') return;
-    const response = await fetch(`/api/boards/${boardId}/share-links`, { headers: authHeaders() });
+    const response = await fetch(apiUrl(`/api/boards/${boardId}/share-links`), { headers: authHeaders() });
     if (!response.ok) return;
     const links = await response.json();
     await navigator.clipboard.writeText(kind === 'edit' ? links.editUrl : links.viewUrl);
@@ -108,6 +149,12 @@ document.getElementById('sidebar-toggle').addEventListener('click', () => docume
 document.getElementById('sidebar-collapse').addEventListener('click', () => document.body.classList.toggle('sidebar-collapsed'));
 document.getElementById('new-board-button').addEventListener('click', createNewBoard);
 document.getElementById('rename-board').addEventListener('click', renameCurrentBoard);
+boardTitleInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        renameCurrentBoard();
+    }
+});
 document.getElementById('share-edit').addEventListener('click', () => copyShareLink('edit'));
 document.getElementById('share-view').addEventListener('click', () => copyShareLink('view'));
 document.getElementById('export-pdf').addEventListener('click', exportPdf);
@@ -125,7 +172,7 @@ async function loadBoard() {
             window.location.href = '/auth';
             return;
         }
-        const response = await fetch('/api/boards', {
+        const response = await fetch(apiUrl('/api/boards'), {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
         if (!response.ok) throw new Error('Unable to load your boards');
@@ -136,7 +183,7 @@ async function loadBoard() {
     }
 
     if (shareToken) {
-        const response = await fetch(`/api/boards/share/${shareToken}`);
+        const response = await fetch(apiUrl(`/api/boards/share/${shareToken}`));
         if (!response.ok) throw new Error('This share link is invalid');
         boardResult = await response.json();
     } else {
@@ -144,7 +191,7 @@ async function loadBoard() {
             window.location.href = '/auth';
             return;
         }
-        const response = await fetch(`/api/boards/${boardId}`, {
+        const response = await fetch(apiUrl(`/api/boards/${boardId}`), {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
         if (!response.ok) throw new Error('Unable to open this board');
@@ -360,16 +407,12 @@ socket.on('draw', (line) => {
     updateHistoryControls();
 });
 
-socket.on('clear', () => {
-    drawingHistory = [];
-    redoHistory = [];
-    pagesElement.querySelectorAll('canvas').forEach(redrawHistory);
-    updateHistoryControls();
-});
-
 ensurePages(pageCount);
 window.addEventListener('resize', () => pagesElement.querySelectorAll('canvas').forEach(resizeCanvas));
-loadBoard().catch((error) => {
+(async function initializeBoard() {
+    await restoreAuthSession();
+    await loadBoard();
+})().catch((error) => {
     statusLabel.textContent = error.message;
     status.classList.remove('connected');
 });

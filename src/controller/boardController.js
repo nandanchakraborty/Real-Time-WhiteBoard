@@ -4,7 +4,8 @@ const {
 	listRecentBoards,
 	findOwnedBoard,
 	findBoardByShareToken,
-	updateBoard
+	updateBoard,
+	deleteOwnedBoard
 } = require('../services/boardService/boardservice');
 
 function boardResponse(board) {
@@ -65,6 +66,7 @@ async function getSharedBoard(req, res) {
 async function renameBoard(req, res) {
 	try {
 		const board = await updateBoard(req.params.boardId, req.auth.userId, { title: req.body.title });
+		if (!board) return res.status(404).json({ error: 'Board not found' });
 		return res.json({ board: boardResponse(board) });
 	} catch (error) {
 		console.error('Unable to rename board:', error);
@@ -78,6 +80,7 @@ async function saveBoard(req, res) {
 			content: req.body.content,
 			pageCount: req.body.pageCount
 		});
+		if (!board) return res.status(404).json({ error: 'Board not found' });
 		return res.json({ board: boardResponse(board) });
 	} catch (error) {
 		console.error('Unable to save board:', error);
@@ -97,4 +100,15 @@ async function getShareLinks(req, res) {
 	}
 }
 
-module.exports = { getRecentBoards, createNewBoard, getBoard, getSharedBoard, renameBoard, saveBoard, getShareLinks };
+async function deleteBoard(req, res) {
+	try {
+		const deleted = await deleteOwnedBoard(req.params.boardId, req.auth.userId);
+		if (!deleted) return res.status(404).json({ error: 'Board not found' });
+		return res.json({ message: 'Board deleted successfully' });
+	} catch (error) {
+		console.error('Unable to delete board:', error);
+		return res.status(500).json({ error: 'Unable to delete board' });
+	}
+}
+
+module.exports = { getRecentBoards, createNewBoard, getBoard, getSharedBoard, renameBoard, saveBoard, getShareLinks, deleteBoard };

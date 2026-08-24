@@ -25,6 +25,8 @@ function clearRefreshCookie(res) {
 }
 
 function getRefreshToken(req) {
+	if (req.body?.refreshToken) return req.body.refreshToken;
+
 	const cookies = (req.headers.cookie || '').split(';');
 	const refreshCookie = cookies.find((cookie) => cookie.trim().startsWith(`${REFRESH_COOKIE}=`));
 	return refreshCookie ? decodeURIComponent(refreshCookie.trim().slice(`${REFRESH_COOKIE}=`.length)) : null;
@@ -104,7 +106,7 @@ async function refresh(req, res) {
 
 async function logout(req, res) {
 	clearRefreshCookie(res);
-	return res.redirect('/login');
+	return res.json({ message: 'Logged out successfully' });
 }
 
 async function currentUser(req, res) {

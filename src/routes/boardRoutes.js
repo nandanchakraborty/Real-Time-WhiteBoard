@@ -7,7 +7,8 @@ const {
 	getSharedBoard,
 	renameBoard,
 	saveBoard,
-	getShareLinks
+	getShareLinks,
+	deleteBoard
 } = require('../controller/boardController');
 
 const router = express.Router();
@@ -15,6 +16,7 @@ const router = express.Router();
 router.get('/', authenticateToken, getRecentBoards);
 router.post('/', authenticateToken, createNewBoard);
 router.get('/share/:token', getSharedBoard);
+router.delete('/:boardId', authenticateToken, deleteBoard);
 router.get('/:boardId', authenticateToken, getBoard);
 router.patch('/:boardId/title', authenticateToken, renameBoard);
 router.put('/:boardId/content', authenticateToken, saveBoard);
