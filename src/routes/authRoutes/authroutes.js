@@ -6,10 +6,13 @@ const { loginSchema, registrationSchema } = require('../../validators/authValida
 
 const router = express.Router();
 
+// Public account endpoints. Validation runs before the controller.
 router.post('/register', validate(registrationSchema), register);
 router.post('/login', validate(loginSchema), login);
 router.post('/refresh', refresh);
 router.post('/logout', logout);
+
+// This endpoint demonstrates a protected route and returns the current account.
 router.get('/me', authenticateToken, currentUser);
 
 module.exports = router;

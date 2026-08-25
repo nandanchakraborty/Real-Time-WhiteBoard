@@ -7,6 +7,7 @@
 		<title>Canvas room | Real-time whiteboard</title>
 	</head>
 	<body>
+		<!-- Header contains navigation and the live Socket.IO connection status. -->
 		<header class="app-header">
 			<button
 				class="sidebar-toggle"
@@ -43,6 +44,7 @@
 				>
 			</div>
 		</header>
+		<!-- Sidebar manages board names, saved boards, sharing, and export. -->
 		<aside
 			class="board-sidebar"
 			id="board-sidebar"
@@ -95,6 +97,7 @@
 			</div>
 		</aside>
 
+		<!-- The canvas area is populated by script.js after the board API responds. -->
 		<main class="workspace">
 			<section class="board-shell" aria-label="Shared drawing board">
 				<div class="board-toolbar">
@@ -241,6 +244,7 @@
 				page URL
 			</p>
 		</main>
+		<!-- Socket.IO provides live collaboration; REST still loads the initial board. -->
 		<script src="/socket.io/socket.io.js"></script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
 		<script src="/script.js"></script>

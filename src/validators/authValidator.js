@@ -1,5 +1,6 @@
 const { z } = require('zod');
 
+// Zod rejects malformed input before it reaches password or database code.
 const registrationSchema = z.object({
 	name: z.string().trim().min(1, 'Name is required'),
 	email: z.string().trim().toLowerCase().email('Enter a valid email address'),

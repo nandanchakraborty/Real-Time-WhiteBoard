@@ -1,10 +1,12 @@
 const API_BASE_URL = (window.WHITEBOARD_API_URL || '').replace(/\/$/, '');
 
+// Use an empty base for the bundled client or a full URL for a separate frontend.
 function apiUrl(path) {
     return `${API_BASE_URL}${path}`;
 }
 
 async function restoreAuthSession() {
+    // Refresh the access token before loading a private board or opening its socket.
     try {
         const response = await fetch(apiUrl('/api/auth/refresh'), {
             method: 'POST',
@@ -30,6 +32,8 @@ const socket = typeof io === 'function'
         emit() {},
         on() {}
     };
+
+// The fallback keeps the canvas visible if the realtime library fails to load.
 const pagesElement = document.getElementById('pages');
 const status = document.getElementById('status');
 const statusLabel = status.querySelector('.status-label');
@@ -54,6 +58,7 @@ const boardTitleInput = document.getElementById('board-title');
 const recentBoardsElement = document.getElementById('recent-boards');
 
 function authHeaders() {
+    // REST endpoints use the access token in the standard Bearer format.
     return { Authorization: `Bearer ${localStorage.getItem('whiteboardAccessToken')}` };
 }
 
@@ -62,6 +67,7 @@ function formatBoardDate(value) {
 }
 
 async function loadRecentBoards() {
+    // The sidebar shows only the owner's boards, never boards from a share link.
     if (shareToken) return;
     const response = await fetch(apiUrl('/api/boards'), { headers: authHeaders() });
     if (!response.ok) return;
@@ -83,6 +89,7 @@ async function loadRecentBoards() {
 }
 
 async function deleteSavedBoard(savedBoardId, button) {
+    // The active board is intentionally excluded from deletion in the rendered list.
     if (savedBoardId === boardId || !window.confirm('Delete this saved board? This cannot be undone.')) return;
     button.disabled = true;
     const response = await fetch(apiUrl(`/api/boards/${savedBoardId}`), {
@@ -97,6 +104,7 @@ async function deleteSavedBoard(savedBoardId, button) {
 }
 
 async function createNewBoard() {
+    // The API creates the board; the response supplies its new URL id.
     const response = await fetch(apiUrl('/api/boards'), {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -106,24 +114,18 @@ async function createNewBoard() {
 }
 
 async function renameCurrentBoard() {
+    // Socket.IO broadcasts the saved title to the owner and other editors.
     const title = boardTitleInput.value.trim();
-    if (!title || !boardId || shareToken) return;
-    const response = await fetch(apiUrl(`/api/boards/${boardId}/title`), {
-        method: 'PATCH',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title })
+    if (!title || !boardId || permission !== 'edit') return;
+    socket.emit('rename-board', { title }, (result) => {
+        if (!result?.ok) {
+            window.alert(result?.error || 'Unable to save board name');
+        }
     });
-    if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        window.alert(result.error || 'Unable to save board name');
-        return;
-    }
-    const result = await response.json();
-    boardTitleInput.value = result.board.title;
-    await loadRecentBoards();
 }
 
 async function copyShareLink(kind) {
+    // The API creates both URLs; the client copies the selected one to the clipboard.
     if (!boardId || shareToken || permission !== 'edit') return;
     const response = await fetch(apiUrl(`/api/boards/${boardId}/share-links`), { headers: authHeaders() });
     if (!response.ok) return;
@@ -164,6 +166,7 @@ boardSidebar.addEventListener('mouseleave', () => boardSidebar.classList.remove(
 if (window.innerWidth > 800) document.body.classList.add('sidebar-collapsed');
 
 async function loadBoard() {
+    // Load initial data through REST, then join the same board through Socket.IO.
     const accessToken = localStorage.getItem('whiteboardAccessToken');
     let boardResult;
 
@@ -183,7 +186,9 @@ async function loadBoard() {
     }
 
     if (shareToken) {
-        const response = await fetch(apiUrl(`/api/boards/share/${shareToken}`));
+        const response = await fetch(apiUrl(`/api/boards/share/${shareToken}`), {
+            headers: authHeaders()
+        });
         if (!response.ok) throw new Error('This share link is invalid');
         boardResult = await response.json();
     } else {
@@ -266,6 +271,7 @@ function resizeCanvas(canvas) {
 }
 
 function drawLine(line) {
+    // Coordinates are stored as ratios so drawings resize correctly on different screens.
     const canvas = getPageCanvas(line.pageId || 1);
     if (!canvas) {
         return;
@@ -317,6 +323,7 @@ function toggleEraser() {
 }
 
 function clearBoard() {
+    // These commands are handled by the server so every connected editor stays synced.
     socket.emit('clear-page');
 }
 
@@ -338,6 +345,10 @@ function updateHistoryControls() {
 }
 
 function startDrawing(event, canvas) {
+    // View-only users must not even draw locally; the server also checks this permission.
+    if (permission !== 'edit') {
+        return;
+    }
     drawing = true;
     activeCanvas = canvas;
     canvas.setPointerCapture(event.pointerId);
@@ -345,7 +356,7 @@ function startDrawing(event, canvas) {
 }
 
 function continueDrawing(event, canvas) {
-    if (!drawing || activeCanvas !== canvas) {
+    if (permission !== 'edit' || !drawing || activeCanvas !== canvas) {
         return;
     }
 
@@ -385,7 +396,13 @@ socket.on('disconnect', () => {
     status.classList.remove('connected');
 });
 
+socket.on('board-title', (title) => {
+    boardTitleInput.value = title;
+    loadRecentBoards();
+});
+
 socket.on('drawing-history', (history) => {
+    // A full history replaces local state after joining, undoing, redoing, or clearing.
     drawingHistory = history.map((line) => ({ pageId: line.pageId || 1, ...line }));
     ensurePages(drawingHistory.reduce((highest, line) => Math.max(highest, line.pageId), 1));
     pagesElement.querySelectorAll('canvas').forEach(redrawHistory);

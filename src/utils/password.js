@@ -1,3 +1,4 @@
+// Passwords are stored as one-way hashes, never as plain text.
 const bcrypt = require('bcrypt');
 
 const SALT_ROUNDS = 12;

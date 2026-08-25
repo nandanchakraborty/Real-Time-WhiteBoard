@@ -7,7 +7,9 @@ const {
 	updateBoard,
 	deleteOwnedBoard
 } = require('../services/boardService/boardservice');
+const { verifyToken } = require('../utils/jwt');
 
+// Keep API responses consistent and avoid exposing share tokens in normal board data.
 function boardResponse(board) {
 	return {
 		id: board.id,
@@ -20,6 +22,7 @@ function boardResponse(board) {
 }
 
 async function getRecentBoards(req, res) {
+	// Ensure every account has a destination board before returning the list.
 	try {
 		const firstBoard = await ensureFirstBoard(req.auth.userId);
 		const boards = await listRecentBoards(req.auth.userId);
@@ -52,10 +55,19 @@ async function getBoard(req, res) {
 }
 
 async function getSharedBoard(req, res) {
+	// View tokens work anonymously; edit tokens require a valid access token.
 	try {
 		const board = await findBoardByShareToken(req.params.token);
 		if (!board) return res.status(404).json({ error: 'Share link is invalid' });
-		const permission = board.editToken === req.params.token ? 'edit' : 'view';
+		let permission = 'view';
+		if (board.editToken === req.params.token) {
+			try {
+				verifyToken(req.headers.authorization?.split(' ')[1]);
+				permission = 'edit';
+			} catch (error) {
+				permission = 'view';
+			}
+		}
 		return res.json({ board: boardResponse(board), permission });
 	} catch (error) {
 		console.error('Unable to load shared board:', error);
@@ -89,6 +101,7 @@ async function saveBoard(req, res) {
 }
 
 async function getShareLinks(req, res) {
+	// Only the owner can request links, because these URLs grant board access.
 	try {
 		const board = await findOwnedBoard(req.params.boardId, req.auth.userId);
 		if (!board) return res.status(404).json({ error: 'Board not found' });

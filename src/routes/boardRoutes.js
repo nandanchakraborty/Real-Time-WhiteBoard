@@ -13,9 +13,14 @@ const {
 
 const router = express.Router();
 
+// Board listing and creation belong to the logged-in account.
 router.get('/', authenticateToken, getRecentBoards);
 router.post('/', authenticateToken, createNewBoard);
+
+// A share token identifies a board without exposing its owner's board list.
 router.get('/share/:token', getSharedBoard);
+
+// All board mutations and private reads require the owner's access token.
 router.delete('/:boardId', authenticateToken, deleteBoard);
 router.get('/:boardId', authenticateToken, getBoard);
 router.patch('/:boardId/title', authenticateToken, renameBoard);

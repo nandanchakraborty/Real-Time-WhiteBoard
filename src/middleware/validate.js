@@ -1,3 +1,4 @@
+// Validate and normalize a request body before it reaches a controller.
 function validate(schema) {
 	return (req, res, next) => {
 		const result = schema.safeParse(req.body || {});

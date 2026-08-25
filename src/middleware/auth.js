@@ -1,5 +1,7 @@
 const { verifyToken } = require('../utils/jwt');
 
+// Protect REST endpoints that require a logged-in user.
+// The client must send: Authorization: Bearer <access token>
 function authenticateToken(req, res, next) {
 	const authorization = req.headers.authorization || '';
 	const [scheme, token] = authorization.split(' ');

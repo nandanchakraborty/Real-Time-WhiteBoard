@@ -9,11 +9,13 @@ const submitButton = document.getElementById('submit-button');
 let mode = 'login';
 const API_BASE_URL = (window.WHITEBOARD_API_URL || '').replace(/\/$/, '');
 
+// Keep API URL handling identical to the whiteboard client.
 function apiUrl(path) {
 	return `${API_BASE_URL}${path}`;
 }
 
 function setMode(nextMode) {
+	// Switch between login and registration without navigating to another page.
 	mode = nextMode;
 	const isRegistering = mode === 'register';
 
@@ -38,6 +40,7 @@ function setMode(nextMode) {
 tabs.forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
 
 form.addEventListener('submit', async (event) => {
+	// Send credentials to the REST API and store the returned access token locally.
 	event.preventDefault();
 	formMessage.textContent = '';
 	formMessage.className = 'form-message';

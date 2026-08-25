@@ -2,6 +2,8 @@ const { createUser, findUserByEmail, findUserById } = require('../../services/au
 const { hashPassword, verifyPassword } = require('../../utils/password');
 const { createAccessToken, createRefreshToken, verifyRefreshToken } = require('../../utils/jwt');
 
+// The refresh token is kept in an HTTP-only cookie when the bundled client is used.
+// API clients may also send it in the request body.
 const REFRESH_COOKIE = 'whiteboard_refresh_token';
 const refreshCookieOptions = {
 	httpOnly: true,
@@ -12,6 +14,7 @@ const refreshCookieOptions = {
 };
 
 function publicUser(user) {
+	// Never return the password hash in an API response.
 	return {
 		id: user.id,
 		name: user.name,
@@ -25,6 +28,7 @@ function clearRefreshCookie(res) {
 }
 
 function getRefreshToken(req) {
+	// Supporting both formats makes the API usable by browser and non-browser clients.
 	if (req.body?.refreshToken) return req.body.refreshToken;
 
 	const cookies = (req.headers.cookie || '').split(';');
@@ -33,6 +37,7 @@ function getRefreshToken(req) {
 }
 
 async function register(req, res) {
+	// Registration creates the account and immediately starts a session.
 	try {
 		const existingUser = await findUserByEmail(req.body.email);
 		if (existingUser) {
@@ -59,6 +64,7 @@ async function register(req, res) {
 }
 
 async function login(req, res) {
+	// Login checks the hash, then returns a short-lived access token and refresh token.
 	try {
 		const user = await findUserByEmail(req.body.email);
 		if (!user || !(await verifyPassword(req.body.password, user.pass))) {
@@ -81,6 +87,7 @@ async function login(req, res) {
 }
 
 async function refresh(req, res) {
+	// Rotate both tokens so an old refresh token cannot be reused indefinitely.
 	const refreshToken = getRefreshToken(req);
 	if (!refreshToken) {
 		return res.status(401).json({ error: 'Refresh token is required' });
@@ -105,11 +112,13 @@ async function refresh(req, res) {
 }
 
 async function logout(req, res) {
+	// JWT access tokens expire naturally; clearing the refresh cookie ends the session.
 	clearRefreshCookie(res);
 	return res.json({ message: 'Logged out successfully' });
 }
 
 async function currentUser(req, res) {
+	// req.auth is populated by authenticateToken middleware.
 	try {
 		const user = await findUserById(req.auth.userId);
 		if (!user) {
