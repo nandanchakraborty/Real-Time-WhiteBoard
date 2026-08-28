@@ -65,7 +65,7 @@ async function getSharedBoard(req, res) {
 				verifyToken(req.headers.authorization?.split(' ')[1]);
 				permission = 'edit';
 			} catch (error) {
-				permission = 'view';
+				return res.status(401).json({ error: 'Login required to edit this board' });
 			}
 		}
 		return res.json({ board: boardResponse(board), permission });

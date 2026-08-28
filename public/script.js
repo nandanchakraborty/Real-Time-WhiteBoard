@@ -63,6 +63,11 @@ function authHeaders() {
     return { Authorization: `Bearer ${localStorage.getItem('whiteboardAccessToken')}` };
 }
 
+function redirectToAuth() {
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    window.location.href = `/auth?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 function formatBoardDate(value) {
     return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
@@ -190,11 +195,15 @@ async function loadBoard() {
         const response = await fetch(apiUrl(`/api/boards/share/${shareToken}`), {
             headers: authHeaders()
         });
+        if (response.status === 401) {
+            redirectToAuth();
+            return;
+        }
         if (!response.ok) throw new Error('This share link is invalid');
         boardResult = await response.json();
     } else {
         if (!accessToken) {
-            window.location.href = '/auth';
+            redirectToAuth();
             return;
         }
         const response = await fetch(apiUrl(`/api/boards/${boardId}`), {

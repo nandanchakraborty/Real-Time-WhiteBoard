@@ -8,6 +8,10 @@ const submitButton = document.getElementById('submit-button');
 
 let mode = 'login';
 const API_BASE_URL = (window.WHITEBOARD_API_URL || '').replace(/\/$/, '');
+const returnTo = (() => {
+	const candidate = new URLSearchParams(window.location.search).get('returnTo');
+	return candidate && candidate.startsWith('/') && !candidate.startsWith('//') ? candidate : '/whiteboard';
+})();
 
 // Keep API URL handling identical to the whiteboard client.
 function apiUrl(path) {
@@ -65,16 +69,13 @@ form.addEventListener('submit', async (event) => {
 
 		localStorage.setItem('whiteboardAccessToken', result.accessToken);
 		localStorage.setItem('whiteboardUser', JSON.stringify(result.user));
-		formMessage.textContent = mode === 'register' ? 'Account created. You can now log in.' : 'Logged in. Opening the whiteboard...';
+		formMessage.textContent = mode === 'register' ? 'Account created. Opening the whiteboard...' : 'Logged in. Opening the whiteboard...';
 		formMessage.classList.add('success');
 
 		if (mode === 'register') {
-			form.reset();
-			setMode('login');
-			formMessage.textContent = 'Account created. You can now log in.';
-			formMessage.classList.add('success');
+			window.setTimeout(() => { window.location.href = returnTo; }, 500);
 		} else {
-			window.setTimeout(() => { window.location.href = '/whiteboard'; }, 500);
+			window.setTimeout(() => { window.location.href = returnTo; }, 500);
 		}
 	} catch (error) {
 		formMessage.textContent = error.message;
