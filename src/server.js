@@ -6,6 +6,7 @@ const socketIo = require('socket.io');
 
 const cors = require('cors');
 const { connectDatabase } = require('./config/database');
+const { apiNotFound, errorHandler } = require('./middleware/errorHandler');
 const authRoutes = require('./routes/authRoutes/authroutes');
 const boardRoutes = require('./routes/boardRoutes');
 const { findOwnedBoard, findBoardByShareToken, updateBoard } = require('./services/boardService/boardservice');
@@ -43,7 +44,7 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-// These routes serve the included browser client. External clients can use only /api.
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'auth.html'));
 });
@@ -54,6 +55,12 @@ app.get(['/whiteboard', '/whiteboard/:boardId'], (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Unknown API URLs should return JSON instead of an HTML error page.
+app.use(apiNotFound);
+
+// Keep this last so it catches errors from every route and middleware above it.
+app.use(errorHandler);
 
 // Keep active boards in memory so all connected users see changes immediately.
 // The database remains the durable source of truth when a board is reopened.
@@ -183,12 +190,13 @@ io.on('connection',(socket)=>{
         io.to(boardState.id).emit('history-controls', { redoCount: boardState.redo.length });
     });
 
-    // Clear only the currently selected page; undo can restore its removed lines.
-    socket.on('clear-page', async () => {
+    // Clear the page most recently edited ; undo can restore its removed lines.
+    socket.on('clear-page', async ({ pageId } = {}) => {
         if (!boardState || socket.data.permission !== 'edit') return;
-        const lines = boardState.lines.filter((line) => (line.pageId || 1) === boardState.pageCount);
+        const targetPageId = Number(pageId) || boardState.pageCount;
+        const lines = boardState.lines.filter((line) => (line.pageId || 1) === targetPageId);
         if (lines.length === 0) return;
-        boardState.lines = boardState.lines.filter((line) => (line.pageId || 1) !== boardState.pageCount);
+        boardState.lines = boardState.lines.filter((line) => (line.pageId || 1) !== targetPageId);
         boardState.redo = [{ type: 'page-clear', lines }];
         saveState();
         io.to(boardState.id).emit('drawing-history', boardState.lines);

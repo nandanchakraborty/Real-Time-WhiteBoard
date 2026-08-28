@@ -51,6 +51,7 @@ let drawing = false;
 let drawingHistory = [];
 let redoHistory = [];
 let pageCount = 1;
+let lastEditedPageId = 1;
 let activeCanvas = null;
 const undoButton = document.querySelector('[onclick="undo()"]');
 const redoButton = document.querySelector('[onclick="redo()"]');
@@ -206,6 +207,7 @@ async function loadBoard() {
     permission = boardResult.permission;
     boardTitleInput.value = boardResult.board.title;
     drawingHistory = (boardResult.board.content?.lines || []).map((line) => ({ pageId: line.pageId || 1, ...line }));
+    lastEditedPageId = drawingHistory.at(-1)?.pageId || 1;
     pageCount = boardResult.board.pageCount || 1;
     ensurePages(pageCount);
     pagesElement.querySelectorAll('canvas').forEach(redrawHistory);
@@ -324,7 +326,7 @@ function toggleEraser() {
 
 function clearBoard() {
     // These commands are handled by the server so every connected editor stays synced.
-    socket.emit('clear-page');
+    socket.emit('clear-page', { pageId: lastEditedPageId });
 }
 
 function addPage() {
@@ -371,6 +373,7 @@ function continueDrawing(event, canvas) {
         lineWidth: erasing ? eraserWidth : lineWidth
     };
 
+    lastEditedPageId = line.pageId;
     drawingHistory.push(line);
     drawLine(line);
     socket.emit('draw', line);
