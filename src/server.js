@@ -143,6 +143,56 @@ io.on('connection',(socket)=>{
         io.to(boardState.id).emit('history-controls', { redoCount: 0 });
     });
 
+    // Store a new text object and broadcast it to everyone else in the same board room.
+    socket.on('add-text', async (data) => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        boardState.lines.push(data);
+        boardState.redo = [];
+        saveState();
+        socket.to(boardState.id).emit('add-text', data);
+        io.to(boardState.id).emit('history-controls', { redoCount: 0 });
+    });
+
+    // Update text position when user moves text and broadcast to others.
+    socket.on('move-text', async (data) => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        if (boardState.lines[data.index]) {
+            boardState.lines[data.index].x = data.x;
+            boardState.lines[data.index].y = data.y;
+            saveState();
+            socket.to(boardState.id).emit('move-text', data);
+        }
+    });
+
+    socket.on('delete-text', async (data) => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        const index = Number(data.index);
+        if (!Number.isInteger(index) || !boardState.lines[index] || boardState.lines[index].type !== 'text') return;
+
+        const pageId = boardState.lines[index].pageId || Number(data.pageId) || 1;
+        boardState.lines.splice(index, 1);
+        saveState();
+        socket.to(boardState.id).emit('delete-text', { index, pageId });
+    });
+
+    socket.on('update-text', async (data) => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        const index = Number(data.index);
+        if (!Number.isInteger(index) || !boardState.lines[index] || boardState.lines[index].type !== 'text') return;
+
+        const nextText = typeof data.text === 'string' ? data.text.trim() : boardState.lines[index].text;
+        if (!nextText) return;
+
+        boardState.lines[index].text = nextText;
+        boardState.lines[index].x = typeof data.x === 'number' ? data.x : boardState.lines[index].x;
+        boardState.lines[index].y = typeof data.y === 'number' ? data.y : boardState.lines[index].y;
+        boardState.lines[index].pageId = typeof data.pageId === 'number' ? data.pageId : boardState.lines[index].pageId;
+        boardState.lines[index].color = typeof data.color === 'string' ? data.color : boardState.lines[index].color;
+        boardState.lines[index].fontSize = typeof data.fontSize === 'number' ? data.fontSize : boardState.lines[index].fontSize;
+        saveState();
+        socket.to(boardState.id).emit('update-text', { ...data, index });
+    });
+
     // Rename through Socket.IO so the owner and every connected editor update together.
     socket.on('rename-board', async ({ title }, callback) => {
         if (!boardState || socket.data.permission !== 'edit') {

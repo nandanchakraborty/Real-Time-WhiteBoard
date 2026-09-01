@@ -48,6 +48,12 @@ let lineWidth = 5;
 const eraserWidth = 20;
 let erasing = false;
 let drawing = false;
+let textMode = false;
+let textFontSize = 16;
+let selectedTextIndex = null;
+let selectedTextPageId = null;
+let draggingText = false;
+let textDragOffset = { x: 0, y: 0 };
 let drawingHistory = [];
 let redoHistory = [];
 let pageCount = 1;
@@ -57,6 +63,7 @@ const undoButton = document.querySelector('[onclick="undo()"]');
 const redoButton = document.querySelector('[onclick="redo()"]');
 const boardTitleInput = document.getElementById('board-title');
 const recentBoardsElement = document.getElementById('recent-boards');
+const textToolButton = document.getElementById('text-tool-button');
 
 function authHeaders() {
     // REST endpoints use the access token in the standard Bearer format.
@@ -166,6 +173,20 @@ boardTitleInput.addEventListener('keydown', (event) => {
 document.getElementById('share-edit').addEventListener('click', () => copyShareLink('edit'));
 document.getElementById('share-view').addEventListener('click', () => copyShareLink('view'));
 document.getElementById('export-pdf').addEventListener('click', exportPdf);
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (event) => {
+    // Only trigger shortcuts when not typing in an input field
+    if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+        return;
+    }
+    
+    if (event.key === 't' || event.key === 'T') {
+        event.preventDefault();
+        toggleTextTool();
+    }
+});
+
 const boardSidebar = document.getElementById('board-sidebar');
 boardSidebar.addEventListener('mouseenter', () => boardSidebar.classList.add('is-hovered'));
 boardSidebar.addEventListener('mouseleave', () => boardSidebar.classList.remove('is-hovered'));
@@ -255,11 +276,99 @@ function createPage(pageId) {
     pagesElement.appendChild(page);
     drawPageLabel(page, pageId);
     const pageCanvas = page.querySelector('canvas');
-    pageCanvas.addEventListener('pointerdown', (event) => startDrawing(event, pageCanvas));
-    pageCanvas.addEventListener('pointermove', (event) => continueDrawing(event, pageCanvas));
-    pageCanvas.addEventListener('pointerup', stopDrawing);
+    pageCanvas.addEventListener('pointerdown', (event) => {
+        if (textMode) {
+            // In text mode, check if clicking on existing text for selection/move
+            const point = getPoint(event, pageCanvas);
+            const pageId = Number(pageCanvas.closest('.board-page').dataset.pageId);
+            const textIndex = getTextAtPoint(point, pageId);
+            
+            console.log(`[pointerdown] textMode=true, textIndex=${textIndex}`);
+            
+            if (textIndex !== null && permission === 'edit') {
+                console.log(`[pointerdown] selecting text at index ${textIndex}`);
+                event.preventDefault();
+                selectedTextIndex = textIndex;
+                selectedTextPageId = pageId;
+                draggingText = true;
+                pageCanvas.setPointerCapture(event.pointerId);
+                textDragOffset.x = point.x - drawingHistory[textIndex].x;
+                textDragOffset.y = point.y - drawingHistory[textIndex].y;
+                redrawHistory(pageCanvas);
+                return;
+            }
+        }
+        startDrawing(event, pageCanvas);
+    });
+    
+    pageCanvas.addEventListener('pointermove', (event) => {
+        if (draggingText && selectedTextIndex !== null) {
+            const point = getPoint(event, pageCanvas);
+            const textObj = drawingHistory[selectedTextIndex];
+            textObj.x = point.x - textDragOffset.x;
+            textObj.y = point.y - textDragOffset.y;
+            
+            // Clamp to canvas bounds
+            textObj.x = Math.max(0, Math.min(1, textObj.x));
+            textObj.y = Math.max(0, Math.min(1, textObj.y));
+            
+            redrawHistory(pageCanvas);
+            return;
+        }
+        continueDrawing(event, pageCanvas);
+    });
+    
+    pageCanvas.addEventListener('pointerup', (event) => {
+        if (draggingText && selectedTextIndex !== null) {
+            draggingText = false;
+            const textObj = drawingHistory[selectedTextIndex];
+            socket.emit('move-text', {
+                index: selectedTextIndex,
+                x: textObj.x,
+                y: textObj.y,
+                pageId: selectedTextPageId
+            });
+            try {
+                pageCanvas.releasePointerCapture(event.pointerId);
+            } catch (e) {
+                // Pointer capture might already be released
+            }
+            redrawHistory(pageCanvas);
+            return;
+        }
+        stopDrawing();
+    });
+    
     pageCanvas.addEventListener('pointercancel', stopDrawing);
     pageCanvas.addEventListener('pointerleave', stopDrawing);
+    pageCanvas.addEventListener('click', (event) => {
+        if (permission !== 'edit' || draggingText) {
+            return;
+        }
+
+        const point = getPoint(event, pageCanvas);
+        const pageId = Number(pageCanvas.closest('.board-page').dataset.pageId);
+        const textIndex = getTextAtPoint(point, pageId);
+
+        if (textIndex !== null) {
+            const textObj = drawingHistory[textIndex];
+            if (textObj && textObj.type === 'text') {
+                openTextEditor({
+                    canvas: pageCanvas,
+                    pageId,
+                    point: { x: textObj.x, y: textObj.y },
+                    initialValue: textObj.text,
+                    existingTextIndex: textIndex,
+                    clickPosition: { clientX: event.clientX, clientY: event.clientY }
+                });
+            }
+            return;
+        }
+
+        if (textMode) {
+            handleTextInputClick(event, pageCanvas);
+        }
+    });
     resizeCanvas(pageCanvas);
 }
 
@@ -303,7 +412,18 @@ function drawLine(line) {
 function redrawHistory(canvas) {
     const context = canvas.getContext('2d');
     context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-    drawingHistory.filter((line) => line.pageId === Number(canvas.closest('.board-page').dataset.pageId)).forEach(drawLine);
+    const pageId = Number(canvas.closest('.board-page').dataset.pageId);
+    drawingHistory
+        .filter((item) => item.pageId === pageId)
+        .forEach((item, displayIndex) => {
+            if (item.type === 'text') {
+                const historyIndex = drawingHistory.indexOf(item);
+                const isSelected = selectedTextIndex === historyIndex && selectedTextPageId === pageId;
+                drawTextWithSelection(item, displayIndex, pageId, isSelected);
+            } else {
+                drawLine(item);
+            }
+        });
 }
 
 function getPoint(event, canvas) {
@@ -333,6 +453,129 @@ function toggleEraser() {
     erasing = !erasing;
 }
 
+function toggleTextTool() {
+    if (permission !== 'edit') {
+        return;
+    }
+    textMode = !textMode;
+    textToolButton.classList.toggle('is-active', textMode);
+    document.body.style.cursor = textMode ? 'text' : 'auto';
+}
+
+function drawText(textObj) {
+    // Render text on canvas using normalized coordinates
+    const canvas = getPageCanvas(textObj.pageId || 1);
+    if (!canvas) {
+        return;
+    }
+    const context = canvas.getContext('2d');
+    const canvasWidth = canvas.clientWidth;
+    const canvasHeight = canvas.clientHeight;
+    
+    const fontSize = textObj.fontSize || 16;
+    context.font = `${fontSize}px Arial, sans-serif`;
+    context.fillStyle = textObj.color || 'black';
+    context.textBaseline = 'top';
+    context.fillText(textObj.text, textObj.x * canvasWidth, textObj.y * canvasHeight);
+}
+
+function drawTextWithSelection(textObj, index, pageId, isSelected) {
+    // Render text on canvas with selection highlight
+    const canvas = getPageCanvas(textObj.pageId || 1);
+    if (!canvas) {
+        return;
+    }
+    const context = canvas.getContext('2d');
+    const canvasWidth = canvas.clientWidth;
+    const canvasHeight = canvas.clientHeight;
+    
+    const fontSize = textObj.fontSize || 16;
+    context.font = `${fontSize}px Arial, sans-serif`;
+    context.fillStyle = textObj.color || 'black';
+    context.textBaseline = 'top';
+    
+    const x = textObj.x * canvasWidth;
+    const y = textObj.y * canvasHeight;
+    
+    // Draw selection box if selected
+    if (isSelected) {
+        const textMetrics = context.measureText(textObj.text);
+        const width = textMetrics.width;
+        const ascent = textMetrics.actualBoundingBoxAscent || fontSize * 0.8;
+        const descent = textMetrics.actualBoundingBoxDescent || fontSize * 0.2;
+        const height = ascent + descent + 4;
+        
+        context.strokeStyle = '#00aaff';
+        context.lineWidth = 2;
+        context.strokeRect(x - 2, y - 2, width + 4, height + 4);
+        
+        // Draw selection handles
+        context.fillStyle = '#00aaff';
+        context.fillRect(x - 4, y - 4, 8, 8);
+        context.fillRect(x + width - 4, y - 4, 8, 8);
+        context.fillRect(x - 4, y + height - 4, 8, 8);
+        context.fillRect(x + width - 4, y + height - 4, 8, 8);
+    }
+    
+    context.fillStyle = textObj.color || 'black';
+    context.fillText(textObj.text, x, y);
+}
+
+function getTextAtPoint(point, pageId) {
+    // Find if there's a text object at the clicked point
+    const pageTexts = drawingHistory.filter(
+        (item) => item.type === 'text' && (item.pageId || 1) === pageId
+    );
+    
+    console.log(`[getTextAtPoint] page ${pageId}: found ${pageTexts.length} text objects`);
+    
+    // Get canvas for measuring text
+    const canvas = getPageCanvas(pageId);
+    if (!canvas) {
+        console.log('[getTextAtPoint] canvas not found');
+        return null;
+    }
+    
+    const context = canvas.getContext('2d');
+    const canvasWidth = canvas.clientWidth;
+    const canvasHeight = canvas.clientHeight;
+    
+    // Check from last to first (most recent text on top)
+    for (let i = pageTexts.length - 1; i >= 0; i--) {
+        const textObj = pageTexts[i];
+        const fontSize = textObj.fontSize || 16;
+        context.font = `${fontSize}px Arial, sans-serif`;
+        
+        const x = textObj.x * canvasWidth;
+        const y = textObj.y * canvasHeight;
+        const textMetrics = context.measureText(textObj.text);
+        const width = textMetrics.width;
+        // Use actual bounding box metrics for more accurate height
+        const ascent = textMetrics.actualBoundingBoxAscent || fontSize * 0.8;
+        const descent = textMetrics.actualBoundingBoxDescent || fontSize * 0.2;
+        const height = ascent + descent + 4;
+        
+        const clickX = point.x * canvasWidth;
+        const clickY = point.y * canvasHeight;
+        
+        console.log(`[getTextAtPoint] checking text "${textObj.text}" at x=${x}, y=${y}, w=${width}, h=${height}`);
+        console.log(`[getTextAtPoint] click at x=${clickX}, y=${clickY}`);
+        console.log(`[getTextAtPoint] bounds: x: [${x - 5}, ${x + width + 5}], y: [${y - 5}, ${y + height + 5}]`);
+        
+        // Check if click is within text bounds (with padding)
+        if (clickX >= x - 5 && clickX <= x + width + 5 &&
+            clickY >= y - 5 && clickY <= y + height + 5) {
+            // Return the actual index in drawingHistory
+            const historyIndex = drawingHistory.indexOf(textObj);
+            console.log(`[getTextAtPoint] FOUND text at history index ${historyIndex}`);
+            return historyIndex;
+        }
+    }
+    
+    console.log('[getTextAtPoint] no text found at click point');
+    return null;
+}
+
 function clearBoard() {
     // These commands are handled by the server so every connected editor stays synced.
     socket.emit('clear-page', { pageId: lastEditedPageId });
@@ -360,6 +603,11 @@ function startDrawing(event, canvas) {
     if (permission !== 'edit') {
         return;
     }
+    
+    // Clear text selection when starting to draw
+    selectedTextIndex = null;
+    selectedTextPageId = null;
+    
     drawing = true;
     activeCanvas = canvas;
     canvas.setPointerCapture(event.pointerId);
@@ -391,10 +639,173 @@ function continueDrawing(event, canvas) {
 
 function stopDrawing() {
     drawing = false;
+    draggingText = false;
+    selectedTextIndex = null;
+    selectedTextPageId = null;
     if (activeCanvas) {
         activeCanvas.lastPoint = null;
     }
     activeCanvas = null;
+}
+
+function openTextEditor({
+    canvas,
+    pageId,
+    point,
+    initialValue = '',
+    existingTextIndex = null,
+    clickPosition = null
+}) {
+    const startPoint = point || { x: 0, y: 0 };
+    const initialClientX = clickPosition ? clickPosition.clientX : window.innerWidth / 2;
+    const initialClientY = clickPosition ? clickPosition.clientY : window.innerHeight / 2;
+    let draftPoint = { ...startPoint };
+    let isDraggingInput = false;
+    let dragOffset = { x: 0, y: 0 };
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = initialValue;
+    input.placeholder = 'Type text...';
+    input.style.position = 'fixed';
+    input.style.left = `${initialClientX}px`;
+    input.style.top = `${initialClientY}px`;
+    input.style.padding = '4px 8px';
+    input.style.fontSize = `${textFontSize}px`;
+    input.style.border = `2px solid ${color}`;
+    input.style.borderRadius = '4px';
+    input.style.zIndex = '1000';
+    input.style.fontFamily = 'Arial, sans-serif';
+    input.style.cursor = 'move';
+    input.style.background = '#fff';
+
+    const updateDraftPointFromInput = () => {
+        const canvasRect = canvas.getBoundingClientRect();
+        const centerX = input.offsetLeft + (input.offsetWidth / 2);
+        const centerY = input.offsetTop + (input.offsetHeight / 2);
+        const normalizedX = (centerX - canvasRect.left) / canvasRect.width;
+        const normalizedY = (centerY - canvasRect.top) / canvasRect.height;
+        draftPoint = {
+            x: Math.max(0, Math.min(1, normalizedX)),
+            y: Math.max(0, Math.min(1, normalizedY))
+        };
+    };
+
+    const removeInput = () => {
+        if (input.parentNode) {
+            input.parentNode.removeChild(input);
+        }
+    };
+
+    const finishTextEditing = () => {
+        const text = input.value.trim();
+        if (!text) {
+            if (existingTextIndex !== null && drawingHistory[existingTextIndex]) {
+                const removedItem = drawingHistory[existingTextIndex];
+                drawingHistory.splice(existingTextIndex, 1);
+                selectedTextIndex = null;
+                selectedTextPageId = null;
+                draggingText = false;
+                redrawHistory(canvas);
+                socket.emit('delete-text', {
+                    index: existingTextIndex,
+                    pageId: removedItem.pageId || pageId
+                });
+            }
+            removeInput();
+            textMode = false;
+            textToolButton.classList.remove('is-active');
+            document.body.style.cursor = 'auto';
+            return;
+        }
+
+        const textObj = {
+            type: 'text',
+            pageId,
+            x: draftPoint.x,
+            y: draftPoint.y,
+            text,
+            color,
+            fontSize: textFontSize
+        };
+
+        if (existingTextIndex !== null && drawingHistory[existingTextIndex]) {
+            const existingText = drawingHistory[existingTextIndex];
+            Object.assign(existingText, textObj);
+            redrawHistory(canvas);
+            socket.emit('update-text', { index: existingTextIndex, ...textObj });
+        } else {
+            lastEditedPageId = pageId;
+            drawingHistory.push(textObj);
+            redrawHistory(canvas);
+            socket.emit('add-text', textObj);
+        }
+
+        removeInput();
+        textMode = false;
+        textToolButton.classList.remove('is-active');
+        document.body.style.cursor = 'auto';
+    };
+
+    document.body.appendChild(input);
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+
+    input.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) {
+            return;
+        }
+        isDraggingInput = true;
+        dragOffset.x = event.clientX - input.getBoundingClientRect().left;
+        dragOffset.y = event.clientY - input.getBoundingClientRect().top;
+        input.setPointerCapture(event.pointerId);
+    });
+
+    input.addEventListener('pointermove', (event) => {
+        if (!isDraggingInput) {
+            return;
+        }
+
+        const maxLeft = window.innerWidth - input.offsetWidth - 12;
+        const maxTop = window.innerHeight - input.offsetHeight - 12;
+        const nextLeft = Math.max(8, Math.min(event.clientX - dragOffset.x, maxLeft));
+        const nextTop = Math.max(8, Math.min(event.clientY - dragOffset.y, maxTop));
+        input.style.left = `${nextLeft}px`;
+        input.style.top = `${nextTop}px`;
+        updateDraftPointFromInput();
+    });
+
+    input.addEventListener('pointerup', () => {
+        isDraggingInput = false;
+    });
+
+    input.addEventListener('pointercancel', () => {
+        isDraggingInput = false;
+    });
+
+    input.addEventListener('blur', finishTextEditing);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            finishTextEditing();
+        } else if (e.key === 'Escape') {
+            removeInput();
+            textMode = false;
+            textToolButton.classList.remove('is-active');
+            document.body.style.cursor = 'auto';
+        }
+    });
+}
+
+function handleTextInputClick(event, canvas) {
+    const point = getPoint(event, canvas);
+    const pageId = Number(canvas.closest('.board-page').dataset.pageId);
+    openTextEditor({
+        canvas,
+        pageId,
+        point,
+        clickPosition: { clientX: event.clientX, clientY: event.clientY }
+    });
 }
 
 socket.on('connect', () => {
@@ -433,6 +844,60 @@ socket.on('history-controls', ({ redoCount }) => {
 socket.on('draw', (line) => {
     drawingHistory.push(line);
     drawLine(line);
+    updateHistoryControls();
+});
+
+socket.on('add-text', (textObj) => {
+    drawingHistory.push(textObj);
+    drawText(textObj);
+    updateHistoryControls();
+});
+
+socket.on('move-text', (data) => {
+    // Update text position when other users move text
+    if (drawingHistory[data.index]) {
+        drawingHistory[data.index].x = data.x;
+        drawingHistory[data.index].y = data.y;
+        const canvas = getPageCanvas(data.pageId);
+        if (canvas) {
+            redrawHistory(canvas);
+        }
+    }
+});
+
+socket.on('delete-text', (data) => {
+    if (!Number.isInteger(data.index)) {
+        return;
+    }
+    if (drawingHistory[data.index] && drawingHistory[data.index].type === 'text') {
+        drawingHistory.splice(data.index, 1);
+        selectedTextIndex = null;
+        selectedTextPageId = null;
+        draggingText = false;
+        const canvas = getPageCanvas(data.pageId || 1);
+        if (canvas) {
+            redrawHistory(canvas);
+        }
+        updateHistoryControls();
+    }
+});
+
+socket.on('update-text', (data) => {
+    if (!drawingHistory[data.index] || drawingHistory[data.index].type !== 'text') {
+        return;
+    }
+
+    drawingHistory[data.index].text = data.text;
+    drawingHistory[data.index].x = typeof data.x === 'number' ? data.x : drawingHistory[data.index].x;
+    drawingHistory[data.index].y = typeof data.y === 'number' ? data.y : drawingHistory[data.index].y;
+    drawingHistory[data.index].pageId = typeof data.pageId === 'number' ? data.pageId : drawingHistory[data.index].pageId;
+    drawingHistory[data.index].color = typeof data.color === 'string' ? data.color : drawingHistory[data.index].color;
+    drawingHistory[data.index].fontSize = typeof data.fontSize === 'number' ? data.fontSize : drawingHistory[data.index].fontSize;
+
+    const canvas = getPageCanvas(data.pageId || drawingHistory[data.index].pageId || 1);
+    if (canvas) {
+        redrawHistory(canvas);
+    }
     updateHistoryControls();
 });
 
