@@ -48,6 +48,12 @@ let lineWidth = 5;
 const eraserWidth = 20;
 let erasing = false;
 let drawing = false;
+let shapeMode = null;
+let shapeDrawing = false;
+let activeShape = null;
+let selectedShapeIndex = null;
+let selectedShapePageId = null;
+let shapeInteraction = null;
 let textMode = false;
 let textFontSize = 16;
 let selectedTextIndex = null;
@@ -64,6 +70,7 @@ const redoButton = document.querySelector('[onclick="redo()"]');
 const boardTitleInput = document.getElementById('board-title');
 const recentBoardsElement = document.getElementById('recent-boards');
 const textToolButton = document.getElementById('text-tool-button');
+const shapeToolButtons = document.querySelectorAll('.shape-tool');
 
 function authHeaders() {
     // REST endpoints use the access token in the standard Bearer format.
@@ -147,17 +154,41 @@ async function copyShareLink(kind) {
 }
 
 function exportPdf() {
+    const exportButton = document.getElementById('export-pdf');
     const pdfConstructor = window.jspdf?.jsPDF;
-    if (!pdfConstructor) return;
     const canvases = [...pagesElement.querySelectorAll('.board-page canvas')];
-    if (!canvases.length) return;
-    const first = canvases[0];
-    const pdf = new pdfConstructor({ orientation: 'portrait', unit: 'px', format: [first.width, first.height] });
-    canvases.forEach((canvas, index) => {
-        if (index > 0) pdf.addPage([canvas.width, canvas.height], 'portrait');
-        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height);
-    });
-    pdf.save(`${(boardTitleInput.value || 'whiteboard').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
+    if (!pdfConstructor || !canvases.length) {
+        window.alert('The board is not ready to export yet. Please try again.');
+        return;
+    }
+
+    exportButton.disabled = true;
+    try {
+        const first = canvases[0];
+        const pdf = new pdfConstructor({
+            orientation: first.width > first.height ? 'landscape' : 'portrait',
+            unit: 'px',
+            format: [first.width, first.height]
+        });
+        canvases.forEach((canvas, index) => {
+            const width = canvas.width;
+            const height = canvas.height;
+            if (index > 0) {
+                pdf.addPage([width, height], width > height ? 'landscape' : 'portrait');
+            }
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, width, height);
+        });
+        const filename = (boardTitleInput.value || 'whiteboard')
+            .replace(/[^a-z0-9]+/gi, '-')
+            .replace(/^-|-$/g, '')
+            .toLowerCase() || 'whiteboard';
+        pdf.save(`${filename}.pdf`);
+    } catch (error) {
+        console.error('Unable to export whiteboard as PDF:', error);
+        window.alert('Unable to export the board as PDF. Please try again.');
+    } finally {
+        exportButton.disabled = false;
+    }
 }
 
 document.getElementById('sidebar-toggle').addEventListener('click', () => document.body.classList.toggle('sidebar-open'));
@@ -173,6 +204,9 @@ boardTitleInput.addEventListener('keydown', (event) => {
 document.getElementById('share-edit').addEventListener('click', () => copyShareLink('edit'));
 document.getElementById('share-view').addEventListener('click', () => copyShareLink('view'));
 document.getElementById('export-pdf').addEventListener('click', exportPdf);
+shapeToolButtons.forEach((button) => {
+    button.addEventListener('click', () => setShape(button.dataset.shape));
+});
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (event) => {
@@ -248,6 +282,9 @@ async function loadBoard() {
         document.getElementById('rename-board').disabled = true;
         document.getElementById('share-edit').disabled = true;
         document.getElementById('share-view').disabled = true;
+        shapeToolButtons.forEach((button) => {
+            button.disabled = true;
+        });
     }
     pendingJoin = { boardId, accessToken, shareToken };
     if (!socket.connected) socket.connect();
@@ -277,6 +314,17 @@ function createPage(pageId) {
     drawPageLabel(page, pageId);
     const pageCanvas = page.querySelector('canvas');
     pageCanvas.addEventListener('pointerdown', (event) => {
+        if (!textMode) {
+            const shapeIndex = getShapeAtPoint(event, pageCanvas);
+            if (shapeIndex !== null) {
+                startShapeInteraction(event, pageCanvas, shapeIndex);
+                return;
+            }
+        }
+        if (shapeMode) {
+            startShape(event, pageCanvas);
+            return;
+        }
         if (textMode) {
             // In text mode, check if clicking on existing text for selection/move
             const point = getPoint(event, pageCanvas);
@@ -302,6 +350,14 @@ function createPage(pageId) {
     });
     
     pageCanvas.addEventListener('pointermove', (event) => {
+        if (shapeInteraction && activeCanvas === pageCanvas) {
+            updateShapeInteraction(event, pageCanvas);
+            return;
+        }
+        if (shapeDrawing && activeCanvas === pageCanvas) {
+            updateShape(event, pageCanvas);
+            return;
+        }
         if (draggingText && selectedTextIndex !== null) {
             const point = getPoint(event, pageCanvas);
             const textObj = drawingHistory[selectedTextIndex];
@@ -319,6 +375,14 @@ function createPage(pageId) {
     });
     
     pageCanvas.addEventListener('pointerup', (event) => {
+        if (shapeInteraction && activeCanvas === pageCanvas) {
+            finishShapeInteraction(event, pageCanvas);
+            return;
+        }
+        if (shapeDrawing && activeCanvas === pageCanvas) {
+            finishShape(event, pageCanvas);
+            return;
+        }
         if (draggingText && selectedTextIndex !== null) {
             draggingText = false;
             const textObj = drawingHistory[selectedTextIndex];
@@ -339,8 +403,12 @@ function createPage(pageId) {
         stopDrawing();
     });
     
-    pageCanvas.addEventListener('pointercancel', stopDrawing);
-    pageCanvas.addEventListener('pointerleave', stopDrawing);
+    pageCanvas.addEventListener('pointercancel', cancelShapeOrDrawing);
+    pageCanvas.addEventListener('pointerleave', () => {
+        if (!shapeDrawing && !shapeInteraction) {
+            stopDrawing();
+        }
+    });
     pageCanvas.addEventListener('click', (event) => {
         if (permission !== 'edit' || draggingText) {
             return;
@@ -420,6 +488,12 @@ function redrawHistory(canvas) {
                 const historyIndex = drawingHistory.indexOf(item);
                 const isSelected = selectedTextIndex === historyIndex && selectedTextPageId === pageId;
                 drawTextWithSelection(item, displayIndex, pageId, isSelected);
+            } else if (item.type === 'shape') {
+                drawShape(item);
+                const historyIndex = drawingHistory.indexOf(item);
+                if (selectedShapeIndex === historyIndex && selectedShapePageId === pageId) {
+                    drawShapeSelection(item, canvas);
+                }
             } else {
                 drawLine(item);
             }
@@ -458,8 +532,274 @@ function toggleTextTool() {
         return;
     }
     textMode = !textMode;
+    if (textMode) {
+        shapeMode = null;
+        shapeToolButtons.forEach((button) => {
+            button.classList.remove('is-active');
+        });
+    }
     textToolButton.classList.toggle('is-active', textMode);
     document.body.style.cursor = textMode ? 'text' : 'auto';
+}
+
+function setShape(nextShape) {
+    if (permission !== 'edit') {
+        return;
+    }
+    shapeMode = shapeMode === nextShape ? null : nextShape;
+    textMode = false;
+    textToolButton.classList.remove('is-active');
+    shapeToolButtons.forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.shape === shapeMode);
+    });
+    document.body.style.cursor = shapeMode ? 'crosshair' : 'auto';
+}
+
+function drawShape(shape) {
+    const canvas = getPageCanvas(shape.pageId || 1);
+    if (!canvas) {
+        return;
+    }
+    const context = canvas.getContext('2d');
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const startX = shape.startX * width;
+    const startY = shape.startY * height;
+    const endX = shape.endX * width;
+    const endY = shape.endY * height;
+    const left = Math.min(startX, endX);
+    const top = Math.min(startY, endY);
+    const shapeWidth = Math.abs(endX - startX);
+    const shapeHeight = Math.abs(endY - startY);
+    const shapeSize = Math.min(shapeWidth, shapeHeight);
+
+    context.strokeStyle = shape.color || color;
+    context.lineWidth = shape.lineWidth || lineWidth;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.beginPath();
+    if (shape.shape === 'circle') {
+        context.arc(left + shapeWidth / 2, top + shapeHeight / 2, shapeSize / 2, 0, Math.PI * 2);
+    } else if (shape.shape === 'triangle') {
+        context.moveTo(left + shapeWidth / 2, top);
+        context.lineTo(left + shapeWidth, top + shapeHeight);
+        context.lineTo(left, top + shapeHeight);
+        context.closePath();
+    } else if (shape.shape === 'arrow') {
+        const angle = Math.atan2(endY - startY, endX - startX);
+        const headLength = Math.max(12, (shape.lineWidth || lineWidth) * 3);
+        context.moveTo(startX, startY);
+        context.lineTo(endX, endY);
+        context.moveTo(endX, endY);
+        context.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6), endY - headLength * Math.sin(angle - Math.PI / 6));
+        context.moveTo(endX, endY);
+        context.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6), endY - headLength * Math.sin(angle + Math.PI / 6));
+    } else {
+        context.rect(left + (shapeWidth - shapeSize) / 2, top + (shapeHeight - shapeSize) / 2, shapeSize, shapeSize);
+    }
+    context.stroke();
+}
+
+function getShapeBounds(shape) {
+    return {
+        left: Math.min(shape.startX, shape.endX),
+        top: Math.min(shape.startY, shape.endY),
+        right: Math.max(shape.startX, shape.endX),
+        bottom: Math.max(shape.startY, shape.endY)
+    };
+}
+
+function getShapeAtPoint(event, canvas) {
+    const point = getPoint(event, canvas);
+    const paddingX = 12 / canvas.clientWidth;
+    const paddingY = 12 / canvas.clientHeight;
+    const pageId = Number(canvas.closest('.board-page').dataset.pageId);
+    for (let index = drawingHistory.length - 1; index >= 0; index -= 1) {
+        const shape = drawingHistory[index];
+        if (shape.type !== 'shape' || (shape.pageId || 1) !== pageId) {
+            continue;
+        }
+        const bounds = getShapeBounds(shape);
+        if (point.x >= bounds.left - paddingX && point.x <= bounds.right + paddingX && point.y >= bounds.top - paddingY && point.y <= bounds.bottom + paddingY) {
+            return index;
+        }
+    }
+    return null;
+}
+
+function getShapeHandleAtPoint(shape, point, canvas) {
+    if (selectedShapeIndex === null) {
+        return null;
+    }
+    const bounds = getShapeBounds(shape);
+    const handleX = 14 / canvas.clientWidth;
+    const handleY = 14 / canvas.clientHeight;
+    const handles = {
+        nw: [bounds.left, bounds.top],
+        n: [(bounds.left + bounds.right) / 2, bounds.top],
+        ne: [bounds.right, bounds.top],
+        e: [bounds.right, (bounds.top + bounds.bottom) / 2],
+        se: [bounds.right, bounds.bottom],
+        s: [(bounds.left + bounds.right) / 2, bounds.bottom],
+        sw: [bounds.left, bounds.bottom],
+        w: [bounds.left, (bounds.top + bounds.bottom) / 2]
+    };
+    return Object.entries(handles).find(([, position]) => Math.abs(point.x - position[0]) <= handleX && Math.abs(point.y - position[1]) <= handleY)?.[0] || null;
+}
+
+function drawShapeSelection(shape, canvas) {
+    const context = canvas.getContext('2d');
+    const bounds = getShapeBounds(shape);
+    const left = bounds.left * canvas.clientWidth;
+    const top = bounds.top * canvas.clientHeight;
+    const width = (bounds.right - bounds.left) * canvas.clientWidth;
+    const height = (bounds.bottom - bounds.top) * canvas.clientHeight;
+    const handles = [
+        [left, top], [left + width / 2, top], [left + width, top],
+        [left + width, top + height / 2], [left + width, top + height],
+        [left + width / 2, top + height], [left, top + height], [left, top + height / 2]
+    ];
+    context.save();
+    context.strokeStyle = '#5b87ad';
+    context.lineWidth = 1;
+    context.setLineDash([5, 4]);
+    context.strokeRect(left, top, width, height);
+    context.setLineDash([]);
+    context.fillStyle = '#fffdf8';
+    context.strokeStyle = '#5b87ad';
+    handles.forEach(([x, y]) => {
+        context.fillRect(x - 4, y - 4, 8, 8);
+        context.strokeRect(x - 4, y - 4, 8, 8);
+    });
+    context.restore();
+}
+
+function startShapeInteraction(event, canvas, index) {
+    if (permission !== 'edit') {
+        return;
+    }
+    const point = getPoint(event, canvas);
+    const shape = drawingHistory[index];
+    selectedShapeIndex = index;
+    selectedShapePageId = shape.pageId || 1;
+    shapeInteraction = {
+        index,
+        handle: getShapeHandleAtPoint(shape, point, canvas),
+        startPoint: point,
+        original: { ...shape }
+    };
+    activeCanvas = canvas;
+    canvas.setPointerCapture(event.pointerId);
+    redrawHistory(canvas);
+}
+
+function updateShapeInteraction(event, canvas) {
+    const interaction = shapeInteraction;
+    const shape = drawingHistory[interaction.index];
+    const point = getPoint(event, canvas);
+    if (!shape) {
+        return;
+    }
+    if (!interaction.handle) {
+        const deltaX = point.x - interaction.startPoint.x;
+        const deltaY = point.y - interaction.startPoint.y;
+        const originalBounds = getShapeBounds(interaction.original);
+        const boundedDeltaX = Math.max(-originalBounds.left, Math.min(1 - originalBounds.right, deltaX));
+        const boundedDeltaY = Math.max(-originalBounds.top, Math.min(1 - originalBounds.bottom, deltaY));
+        shape.startX = interaction.original.startX + boundedDeltaX;
+        shape.endX = interaction.original.endX + boundedDeltaX;
+        shape.startY = interaction.original.startY + boundedDeltaY;
+        shape.endY = interaction.original.endY + boundedDeltaY;
+    } else {
+        const bounds = getShapeBounds(interaction.original);
+        if (interaction.handle.includes('w')) bounds.left = Math.max(0, Math.min(point.x, bounds.right - 0.01));
+        if (interaction.handle.includes('e')) bounds.right = Math.min(1, Math.max(point.x, bounds.left + 0.01));
+        if (interaction.handle.includes('n')) bounds.top = Math.max(0, Math.min(point.y, bounds.bottom - 0.01));
+        if (interaction.handle.includes('s')) bounds.bottom = Math.min(1, Math.max(point.y, bounds.top + 0.01));
+        shape.startX = bounds.left;
+        shape.startY = bounds.top;
+        shape.endX = bounds.right;
+        shape.endY = bounds.bottom;
+    }
+    redrawHistory(canvas);
+}
+
+function finishShapeInteraction(event, canvas) {
+    updateShapeInteraction(event, canvas);
+    const shape = drawingHistory[shapeInteraction.index];
+    socket.emit('update-shape', { index: shapeInteraction.index, ...shape });
+    shapeInteraction = null;
+    activeCanvas = null;
+    try {
+        canvas.releasePointerCapture(event.pointerId);
+    } catch (error) {
+        // Pointer capture may already be released.
+    }
+}
+
+function startShape(event, canvas) {
+    if (permission !== 'edit') {
+        return;
+    }
+    const point = getPoint(event, canvas);
+    selectedShapeIndex = null;
+    selectedShapePageId = null;
+    drawing = false;
+    shapeDrawing = true;
+    activeCanvas = canvas;
+    canvas.setPointerCapture(event.pointerId);
+    activeShape = {
+        type: 'shape',
+        shape: shapeMode,
+        pageId: Number(canvas.closest('.board-page').dataset.pageId),
+        startX: point.x,
+        startY: point.y,
+        endX: point.x,
+        endY: point.y,
+        color,
+        lineWidth
+    };
+}
+
+function updateShape(event, canvas) {
+    const point = getPoint(event, canvas);
+    activeShape.endX = point.x;
+    activeShape.endY = point.y;
+    redrawHistory(canvas);
+    drawShape(activeShape);
+}
+
+function finishShape(event, canvas) {
+    updateShape(event, canvas);
+    if (Math.abs(activeShape.endX - activeShape.startX) > 0.005 || Math.abs(activeShape.endY - activeShape.startY) > 0.005) {
+        drawingHistory.push(activeShape);
+        lastEditedPageId = activeShape.pageId;
+        socket.emit('add-shape', activeShape);
+        updateHistoryControls();
+    }
+    shapeDrawing = false;
+    activeShape = null;
+    activeCanvas = null;
+    try {
+        canvas.releasePointerCapture(event.pointerId);
+    } catch (error) {
+        // Pointer capture may already be released.
+    }
+}
+
+function cancelShapeOrDrawing() {
+    if (shapeInteraction && activeCanvas) {
+        const shape = drawingHistory[shapeInteraction.index];
+        Object.assign(shape, shapeInteraction.original);
+        shapeInteraction = null;
+        redrawHistory(activeCanvas);
+    }
+    if (shapeDrawing && activeCanvas) {
+        shapeDrawing = false;
+        activeShape = null;
+        redrawHistory(activeCanvas);
+    }
+    stopDrawing();
 }
 
 function drawText(textObj) {
@@ -827,6 +1167,9 @@ socket.on('board-title', (title) => {
 socket.on('drawing-history', (history) => {
     // A full history replaces local state after joining, undoing, redoing, or clearing.
     drawingHistory = history.map((line) => ({ pageId: line.pageId || 1, ...line }));
+    selectedShapeIndex = null;
+    selectedShapePageId = null;
+    shapeInteraction = null;
     ensurePages(drawingHistory.reduce((highest, line) => Math.max(highest, line.pageId), 1));
     pagesElement.querySelectorAll('canvas').forEach(redrawHistory);
     updateHistoryControls();
@@ -851,6 +1194,27 @@ socket.on('add-text', (textObj) => {
     drawingHistory.push(textObj);
     drawText(textObj);
     updateHistoryControls();
+});
+
+socket.on('add-shape', (shape) => {
+    drawingHistory.push(shape);
+    drawShape(shape);
+    updateHistoryControls();
+});
+
+socket.on('update-shape', (data) => {
+    const shape = drawingHistory[data.index];
+    if (!shape || shape.type !== 'shape') {
+        return;
+    }
+    shape.startX = data.startX;
+    shape.startY = data.startY;
+    shape.endX = data.endX;
+    shape.endY = data.endY;
+    const canvas = getPageCanvas(shape.pageId || 1);
+    if (canvas) {
+        redrawHistory(canvas);
+    }
 });
 
 socket.on('move-text', (data) => {

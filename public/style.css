@@ -189,6 +189,34 @@ body {
 	color: var(--coral-dark);
 }
 
+.shape-tools {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+}
+
+.shape-tool-buttons {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 5px;
+}
+
+.shape-tool {
+	padding: 7px 8px;
+	font-size: 0.66rem;
+}
+
+.shape-tool span {
+	margin-right: 3px;
+	font-size: 1rem;
+}
+
+.shape-tool.is-active {
+	border-color: var(--coral);
+	color: var(--surface);
+	background: var(--coral);
+}
+
 button {
 	font: inherit;
 }
@@ -497,6 +525,13 @@ h1 {
 
 .tool-action:disabled:hover {
 	color: #b9c0b8;
+}
+
+.shape-tool:disabled,
+.shape-tool:disabled:hover {
+	border-color: var(--line);
+	color: #b9c0b8;
+	background: var(--surface);
 }
 
 .history-actions {

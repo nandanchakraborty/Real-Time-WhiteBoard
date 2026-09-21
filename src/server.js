@@ -54,6 +54,7 @@ app.get('/auth', (req, res) => {
 app.get(['/whiteboard', '/whiteboard/:boardId'], (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
+app.use('/vendor', express.static(path.join(__dirname, '..', 'node_modules', 'jspdf', 'dist')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Unknown API URLs should return JSON instead of an HTML error page.
@@ -151,6 +152,30 @@ io.on('connection',(socket)=>{
         saveState();
         socket.to(boardState.id).emit('add-text', data);
         io.to(boardState.id).emit('history-controls', { redoCount: 0 });
+    });
+
+    socket.on('add-shape', async (data) => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        if (!['circle', 'square', 'triangle', 'arrow'].includes(data?.shape)) return;
+        boardState.lines.push(data);
+        boardState.redo = [];
+        saveState();
+        socket.to(boardState.id).emit('add-shape', data);
+        io.to(boardState.id).emit('history-controls', { redoCount: 0 });
+    });
+
+    socket.on('update-shape', async (data) => {
+        if (!boardState || socket.data.permission !== 'edit') return;
+        const index = Number(data?.index);
+        if (!Number.isInteger(index) || !boardState.lines[index] || boardState.lines[index].type !== 'shape') return;
+        if (!['circle', 'square', 'triangle', 'arrow'].includes(data.shape)) return;
+
+        boardState.lines[index].startX = data.startX;
+        boardState.lines[index].startY = data.startY;
+        boardState.lines[index].endX = data.endX;
+        boardState.lines[index].endY = data.endY;
+        saveState();
+        socket.to(boardState.id).emit('update-shape', { index, ...boardState.lines[index] });
     });
 
     // Update text position when user moves text and broadcast to others.

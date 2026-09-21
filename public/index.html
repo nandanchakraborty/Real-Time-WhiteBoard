@@ -91,6 +91,43 @@
 				<button class="sidebar-action" id="share-view" type="button">
 					Copy view link
 				</button>
+				<div class="shape-tools" role="group" aria-label="Shape tools">
+					<span class="tool-label">Shapes</span>
+					<div class="shape-tool-buttons">
+						<button
+							class="sidebar-action shape-tool"
+							type="button"
+							data-shape="circle"
+							title="Draw a circle"
+						>
+							<span aria-hidden="true">○</span> Circle
+						</button>
+						<button
+							class="sidebar-action shape-tool"
+							type="button"
+							data-shape="square"
+							title="Draw a square"
+						>
+							<span aria-hidden="true">□</span> Square
+						</button>
+						<button
+							class="sidebar-action shape-tool"
+							type="button"
+							data-shape="triangle"
+							title="Draw a triangle"
+						>
+							<span aria-hidden="true">△</span> Triangle
+						</button>
+						<button
+							class="sidebar-action shape-tool"
+							type="button"
+							data-shape="arrow"
+							title="Draw an arrow"
+						>
+							<span aria-hidden="true">↗</span> Arrow
+						</button>
+					</div>
+				</div>
 				<button class="sidebar-action" id="export-pdf" type="button">
 					Export all pages as PDF
 				</button>
@@ -255,7 +292,7 @@
 		</main>
 		<!-- Socket.IO provides live collaboration; REST still loads the initial board. -->
 		<script src="/socket.io/socket.io.js"></script>
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+		<script src="/vendor/jspdf.umd.min.js"></script>
 		<script src="/script.js"></script>
 	</body>
 </html>
