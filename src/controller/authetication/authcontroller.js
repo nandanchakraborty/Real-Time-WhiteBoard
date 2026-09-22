@@ -28,7 +28,6 @@ function clearRefreshCookie(res) {
 }
 
 function getRefreshToken(req) {
-	// Supporting both formats makes the API usable by browser and non-browser clients.
 	if (req.body?.refreshToken) return req.body.refreshToken;
 
 	const cookies = (req.headers.cookie || '').split(';');
@@ -37,7 +36,6 @@ function getRefreshToken(req) {
 }
 
 async function register(req, res) {
-	// Registration creates the account and immediately starts a session.
 	try {
 		const existingUser = await findUserByEmail(req.body.email);
 		if (existingUser) {
